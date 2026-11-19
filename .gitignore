@@ -1,0 +1,33 @@
+# colcon outputs
+/build/
+/install/
+/log/
+
+# Python and editor caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.vscode/
+.idea/
+*~
+
+# Local secrets and machine-specific overrides
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+/config/local/
+
+# Recordings and audio assets (add licensed assets explicitly when needed)
+/bags/
+/rosbags/
+/recordings/
+*.db3
+*.mcap
+*.bag
+*.pcd
+*.ply
+*.mp3
+*.wav

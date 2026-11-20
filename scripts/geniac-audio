@@ -1,0 +1,13 @@
+#!/bin/bash
+set -euo pipefail
+export PULSE_RUNTIME_PATH="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/geniac-scenario-audio"
+install -d -m 700 "$PULSE_RUNTIME_PATH"
+cat > "$PULSE_RUNTIME_PATH/default.pa" <<CONFIG
+.fail
+load-module module-native-protocol-unix socket=$PULSE_RUNTIME_PATH/native
+load-module module-alsa-sink device=hw:PCH,0 sink_name=geniac_scenario rate=48000 channels=2
+set-default-sink geniac_scenario
+set-sink-volume geniac_scenario 65536
+set-sink-mute geniac_scenario no
+CONFIG
+exec dbus-run-session -- pulseaudio -n --daemonize=no --use-pid-file=no --exit-idle-time=-1 --log-target=stderr --file="$PULSE_RUNTIME_PATH/default.pa"

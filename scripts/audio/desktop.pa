@@ -1,0 +1,6 @@
+# Desktop applications must never reach the field loudspeaker.
+.fail
+load-module module-native-protocol-unix
+load-module module-null-sink sink_name=desktop_silent sink_properties=device.description=Desktop_Silent
+set-default-sink desktop_silent
+set-sink-mute desktop_silent yes

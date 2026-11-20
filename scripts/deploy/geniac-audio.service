@@ -1,0 +1,11 @@
+[Unit]
+Description=GENIAC exclusive loudspeaker audio server
+After=pulseaudio.service
+Before=geniac-sensor.service
+[Service]
+Type=simple
+ExecStart=%h/geniac_ros2_ws/scripts/geniac-audio
+Restart=always
+RestartSec=2
+[Install]
+WantedBy=default.target

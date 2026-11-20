@@ -6,4 +6,13 @@ source "$GENIAC_WS/install/local_setup.bash"
 export GENIAC_PEER_IP=${GENIAC_PEER_IP:-192.168.1.42}
 export GENIAC_INTERFACE=${GENIAC_INTERFACE:-wlp4s0}
 source "$GENIAC_WS/scripts/geniac-network.sh"
+# Explicit private server: failure must not fall back to desktop audio.
+export PULSE_SERVER="unix:${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/geniac-scenario-audio/native"
+export PULSE_SINK=geniac_scenario
+export SDL_AUDIODRIVER=pulse
+for attempt in {1..30}; do
+  if pactl --server="$PULSE_SERVER" get-default-sink >/dev/null 2>&1; then break; fi
+  sleep 1
+done
+pactl --server="$PULSE_SERVER" get-default-sink >/dev/null
 exec ros2 launch geniac_scenario sensor.launch.py dry_run:=false auto_record:=true archive_enabled:=true camera_enabled:=true discord_enabled:=true env_file:="$GENIAC_WS/.env" "$@"

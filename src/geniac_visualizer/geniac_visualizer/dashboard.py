@@ -88,7 +88,7 @@ class CameraView(QtWidgets.QWidget):
 
 class Dashboard(QtWidgets.QMainWindow):
     def __init__(self,node,interactive=False,spin=None):
-        super().__init__();self.node=node;self.spin=spin or (lambda:rclpy.spin_once(node,timeout_sec=0))
+        super().__init__();self.node=node;self.spin=spin or self.drain_ros
         self.model=ViewModel();self.futures=[];self.rviz=None;self.last_tree_key=None;self.interactive=interactive
         self.setWindowTitle('GENIAC — '+('ドラッグ位置入力・統合テスト' if interactive else '鹿の認識・反応・シナリオ'))
         self.resize(1500,960)
@@ -133,6 +133,14 @@ class Dashboard(QtWidgets.QMainWindow):
         node.create_subscription(Image,camera_topic,self.camera.receive,qos_profile_sensor_data)
         node.create_subscription(CompressedImage,camera_topic+'/compressed',self.camera.receive_compressed,qos_profile_sensor_data)
         self.timer=QtCore.QTimer(self);self.timer.timeout.connect(self.tick);self.timer.start(50)
+
+    def drain_ros(self):
+        # Camera + LiDAR + status exceed one callback per 50 ms GUI frame.
+        # Bound the work so rendering stays responsive without queueing stale images.
+        deadline=time.monotonic()+.015
+        for _ in range(64):
+            if time.monotonic()>=deadline:break
+            rclpy.spin_once(self.node,timeout_sec=0)
 
     def packet(self,kind,msg):
         try:self.model.update(kind,json.loads(msg.data))

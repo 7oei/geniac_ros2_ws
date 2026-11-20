@@ -1,6 +1,7 @@
 [Unit]
 Description=GENIAC stationary LiDAR, camera and scenario service
-After=network-online.target
+After=network-online.target geniac-hap.service
+Wants=geniac-hap.service
 [Service]
 Type=simple
 ExecStart=%h/geniac_ros2_ws/scripts/geniac-sensor

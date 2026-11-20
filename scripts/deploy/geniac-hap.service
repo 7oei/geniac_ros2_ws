@@ -1,0 +1,11 @@
+[Unit]
+Description=GENIAC Livox HAP point cloud driver
+After=network-online.target
+[Service]
+Type=simple
+ExecStart=%h/geniac_ros2_ws/scripts/geniac-hap
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+[Install]
+WantedBy=default.target

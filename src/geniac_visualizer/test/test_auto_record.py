@@ -54,3 +54,12 @@ def test_ready_requires_rosbag_ack_and_records_camera(tmp_path):
     assert r.start()[0]
     assert not r.wait_ready(timeout=.01)[0]
     assert not r.running()
+
+
+def test_dashboard_drains_multiple_callbacks_without_blocking(monkeypatch):
+    from geniac_visualizer.dashboard import Dashboard
+    calls=[]
+    monkeypatch.setattr('geniac_visualizer.dashboard.rclpy.spin_once',lambda node,timeout_sec:calls.append(timeout_sec))
+    Dashboard.drain_ros(NS(node=object()))
+    assert 1<len(calls)<=64
+    assert set(calls)=={0}

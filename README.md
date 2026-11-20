@@ -315,7 +315,8 @@ ros2 run geniac_scenario integration_test
 
 ### k5実機運用（マザーとWi-Fi接続）
 
-- k5: `scripts/geniac-sensor`（HAPドライバは別途 `/livox/lidar` を配信）。
+- k5: `scripts/geniac-sensor`。`scripts/geniac-hap` は既存の
+  `~/armadillo_ros2_ws` のHAPドライバと設定を使って `/livox/lidar` を配信する。
 - マザー: `scripts/geniac-mother`（ビジュアライザーのみ）。
 - ROS_DOMAIN_ID=105、CycloneDDS、マザー192.168.1.42 / k5 192.168.1.64。
   IP変更時は `GENIAC_PEER_IP`、NIC変更時は `GENIAC_INTERFACE` で上書きする。
@@ -330,6 +331,6 @@ ros2 run geniac_scenario integration_test
   手動録画は自動終了せず、GUIの停止ボタンで終了する。
 - 自動録画無効時のみ `auto_record:=false` を指定できる。
   `recording_service:=false` を使う際は別途録画ノードを起動するか、自動録画も無効にする。
-- 常駐: `scripts/deploy/geniac-sensor.service` を `~/.config/systemd/user/` に配置し、
-  `systemctl --user enable --now geniac-sensor`。ログは
+- 常駐: `scripts/deploy/geniac-{hap,sensor}.service` を `~/.config/systemd/user/` に配置し、
+  `systemctl --user enable --now geniac-hap geniac-sensor`。ログは
   `journalctl --user -u geniac-sensor -f`。セッション外での起動にはlinger設定が必要。

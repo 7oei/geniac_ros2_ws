@@ -25,7 +25,7 @@ class CameraNode(Node):
         maximum=int(self.declare_parameter('max_exposure_ms',1000).value)
         if maximum<=0:raise ValueError('max_exposure_ms must be positive')
         self.stack_enabled=self.declare_parameter('frame_sum_enabled',True).value
-        self.stack=FrameSum(float(self.declare_parameter('frame_sum_target',127.).value),
+        self.stack=FrameSum(float(self.declare_parameter('frame_sum_target',80.).value),
                             int(self.declare_parameter('frame_sum_max_frames',64).value))
         self.stack_log=0.
         self.exposure=AutoExposure(self.device,maximum*10,self.get_logger().info) if adaptive else None

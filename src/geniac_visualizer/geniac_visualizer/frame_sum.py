@@ -9,7 +9,7 @@ def luminance(image):
 
 
 class FrameSum:
-    def __init__(self,target=127.,max_frames=64):
+    def __init__(self,target=80.,max_frames=64):
         if not 0<target<255 or not 1<=max_frames<=128:raise ValueError('Invalid frame sum limits')
         self.target=target;self.max_frames=max_frames;self.reset()
     def reset(self):

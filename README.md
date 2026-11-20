@@ -404,7 +404,7 @@ with `adaptive_exposure=false` (on a fresh camera or after clean shutdown).
 
 When adaptive exposure has reached its maximum, `frame_sum_enabled=true`
 adds recent frames until the clipped output mean luminance reaches
-`frame_sum_target=127`. A fractional final gain avoids overshooting. The sliding
+`frame_sum_target=80`. A fractional final gain avoids overshooting. The sliding
 window discards older frames as soon as enough newer frames are available.
 `frame_sum_max_frames=64` bounds memory/history; all-black or heavily clipped
 scenes may still fail to reach the target. During warmup the partial sum is

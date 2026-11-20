@@ -6,8 +6,8 @@ def frame(value):return np.full((8,8,3),value,dtype=np.uint8)
 def test_dark_frames_add_to_target_without_overflow():
     s=FrameSum()
     for _ in range(20):out=s.apply(frame(9),True)
-    assert abs(luminance(out)-127)<=1
-    assert len(s.frames)==15
+    assert abs(luminance(out)-80)<=1
+    assert len(s.frames)==9
 
 def test_bright_frame_and_disabled_clear_history():
     s=FrameSum();s.apply(frame(9),True)
@@ -25,5 +25,5 @@ def test_black_history_is_bounded_and_old_frames_expire():
 def test_saturation_is_measured_after_clipping():
     s=FrameSum();a=frame(4);a[:2]=200
     for _ in range(40):out=s.apply(a,True)
-    assert abs(luminance(out)-127)<=1
+    assert abs(luminance(out)-80)<=1
     assert out.max()==255

@@ -1,0 +1,13 @@
+[Unit]
+Description=GENIAC compressed bag downloads and Discord notifications
+After=network-online.target
+[Service]
+Type=simple
+ExecStart=%h/geniac_ros2_ws/scripts/geniac-archive
+Restart=on-failure
+RestartSec=5
+Nice=10
+IOSchedulingClass=idle
+TimeoutStopSec=30
+[Install]
+WantedBy=default.target

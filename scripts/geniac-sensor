@@ -6,4 +6,4 @@ source "$GENIAC_WS/install/local_setup.bash"
 export GENIAC_PEER_IP=${GENIAC_PEER_IP:-192.168.1.42}
 export GENIAC_INTERFACE=${GENIAC_INTERFACE:-wlp4s0}
 source "$GENIAC_WS/scripts/geniac-network.sh"
-exec ros2 launch geniac_scenario sensor.launch.py dry_run:=false auto_record:=true camera_enabled:=true discord_enabled:=true env_file:="$GENIAC_WS/.env" "$@"
+exec ros2 launch geniac_scenario sensor.launch.py dry_run:=false auto_record:=true archive_enabled:=true camera_enabled:=true discord_enabled:=true env_file:="$GENIAC_WS/.env" "$@"

@@ -21,7 +21,7 @@ def test_auto_record_camera_until_complete_escape(tmp_path):
     rclpy.init()
     nodes=[];executor=MultiThreadedExecutor(num_threads=4);thread=None
     try:
-        recorder=RecorderNode(parameter_overrides=[Parameter('auto_record',value=True),Parameter('output_dir',value=str(tmp_path/'bags'))]);nodes.append(recorder)
+        recorder=RecorderNode(parameter_overrides=[Parameter('auto_record',value=True),Parameter('archive_enabled',value=True),Parameter('output_dir',value=str(tmp_path/'bags'))]);nodes.append(recorder)
         scenario=ScenarioNode(parameter_overrides=[Parameter('auto_record',value=True),Parameter('stock_dir',value=str(tmp_path/'stock')),Parameter('use_stock',value=False)]);nodes.append(scenario)
         probe=Node('recording_test_probe');nodes.append(probe)
         behavior=probe.create_publisher(String,'/geniac/behavior',10)
@@ -44,6 +44,7 @@ def test_auto_record_camera_until_complete_escape(tmp_path):
         until(lambda:scenario.core.running)
         assert recorder.recorder.running() and recorder.auto_owned
         assert scenario.player.process is None
+        assert not (recorder.recorder.output/'metadata.yaml').exists()
         time.sleep(1)
         escaped[0]=True
         until(lambda:not recorder.recorder.running())
@@ -53,6 +54,12 @@ def test_auto_record_camera_until_complete_escape(tmp_path):
         assert counts['/camera/image_raw/compressed']>0
         assert counts['/geniac/scenario/state']>0
         assert scenario.core.reason=='escaped'
+        until(lambda:bool(recorder.archive_queue.rows()) and recorder.archive_queue.rows()[0]['state']=='queued')
+        assert recorder.archive_queue.rows()[0]['outcome']=='escaped'
+        from geniac_visualizer.bag_archive import Archiver
+        Archiver(tmp_path/'bags','https://example.test',delete_raw=True,probe=lambda *a:True).step()
+        assert recorder.archive_queue.rows()[0]['state']=='done'
+        assert not recorder.recorder.output.exists()
         print('Recorded topic counts:',counts)
     finally:
         executor.shutdown(timeout_sec=3)

@@ -24,7 +24,7 @@ def test_audio_waits_for_recording_ack_and_retries():
 def test_automatic_bag_survives_pause_and_stops_after_escape():
     stopped=[]
     n=NS(auto_owned=True,auto_seen_running=False,last_scenario=None,pending=True,
-         recorder=NS(stop=lambda:stopped.append(True)))
+         recorder=NS(stop=lambda:stopped.append(True)),stop_recording=lambda reason:stopped.append(True))
     def state(**d):RecorderNode.scenario(n,NS(data=json.dumps(d)))
     state(running=False,reason='escaped',armed=True)  # queued previous episode
     assert not stopped

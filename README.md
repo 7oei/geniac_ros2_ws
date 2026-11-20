@@ -336,3 +336,26 @@ ros2 run geniac_scenario integration_test
 - 常駐: `scripts/deploy/geniac-{hap,sensor}.service` を `~/.config/systemd/user/` に配置し、
   `systemctl --user enable --now geniac-hap geniac-sensor`。ログは
   `journalctl --user -u geniac-sensor -f`。セッション外での起動にはlinger設定が必要。
+
+### 圧縮ROSBAGのオンライン取得
+
+k5の `geniac-archive.service` が録画後の処理を担当する。シナリオ再生開始時に
+Discord通知を永続キューへ保存し、正常に閉じたbagを別プロセスで `.tar.zst` に圧縮する。
+圧縮の検証、元ファイルの変更有無、公開HTTPSのHEAD応答とサイズ・ETagを確認してから
+未圧縮bagを削除し、ダウンロードURLをDiscordへ通知する。中断録画は終了理由を明示する。
+通信失敗時は元bagを残して再試行する。再起動しても処理キューと通知キューは残る。
+Discordが受信した直後に接続が切れた場合は、再試行で同じ記録IDの通知が重複する可能性がある。
+
+- 圧縮版: `~/geniac_bags/archives/`
+- キュー: `~/geniac_bags/.archive/queue.sqlite3`
+- 保持上限: 100GB（100,000,000,000バイト）。完了済み圧縮版を記録日時の古い順に削除する。
+  削除されたファイルのURLは無効になる。未完了の記録は削除対象にしない。
+- k5の `.env`: `GENIAC_ARCHIVE_BASE_URL=https://<k5の公開ホスト>`、
+  `GENIAC_ARCHIVE_DELETE_RAW=true`、必要なら `GENIAC_ARCHIVE_MAX_BYTES`。
+- `scripts/deploy/geniac-archive.service` をユーザーサービスとして有効にする。
+  サーバーは `127.0.0.1:8765` のみに待受け、Tailscale FunnelからHTTPS中継する。
+  `tailscale funnel --bg http://127.0.0.1:8765`。閲覧端末にTailscaleは不要。
+- ファイルごとにランダムな専用URLを発行する。URLを知る人が取得できる。
+  一覧表示や任意のパス指定には対応しない。大きなファイルの再開用にHTTP Rangeをサポートする。
+- シナリオに紐づいた新しい録画のみ自動処理する。過去のbagや手動録画だけのbagは自動削除しない。
+- 公開ダウンロードはk5がオンラインの間だけ利用できる。

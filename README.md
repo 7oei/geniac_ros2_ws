@@ -384,3 +384,20 @@ GUIの起動前の場面は録画できない。録画無効で起動する場�
 共有するMP4に音声を合成し、このPCに保存した元MP4は映像のみとなる。
 音声収録を導入する前の動画や収録失敗時は、無音であることをDiscord通知に明記する。
 Discordには動画ファイルを添付せず、共有URLだけを送る（動画の添付容量制限に依存しない）。
+
+### USB camera exposure
+
+`geniac_camera` measures frame luminance once per second and adjusts V4L2
+exposure time (`adaptive_exposure=true`). The default upper bound is 100 ms
+(`max_exposure_ms`); changes are gradual with a brightness deadband. On control
+failure or clean shutdown it restores hardware auto exposure. Reconnection
+initializes the controller again. This requires `v4l2-ctl` from `v4l-utils`.
+
+The default capture format remains MJPG. k5 also supports YUYV at 1280x720 /
+8 fps (`capture_format=YUYV`), but testing in the current dark scene did not
+produce a significant brightness improvement. ROS transport and bags still
+contain JPEG images. Exposure control values do not guarantee that camera
+firmware physically achieves the requested integration time.
+Longer exposure may blur moving subjects; darkness without available light
+cannot be corrected by exposure alone. Hardware auto exposure remains available
+with `adaptive_exposure=false` (on a fresh camera or after clean shutdown).

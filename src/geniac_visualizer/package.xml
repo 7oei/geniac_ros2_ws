@@ -10,6 +10,7 @@
   <exec_depend>python3-yaml</exec_depend>
   <exec_depend>zstd</exec_depend>
   <exec_depend>ffmpeg</exec_depend>
+  <exec_depend>v4l-utils</exec_depend>
   <exec_depend>pulseaudio-utils</exec_depend>
   <exec_depend>rsync</exec_depend>
   <exec_depend>openssh-client</exec_depend>

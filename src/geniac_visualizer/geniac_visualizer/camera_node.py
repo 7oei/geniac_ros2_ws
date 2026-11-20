@@ -21,7 +21,7 @@ class CameraNode(Node):
         self.frame=self.declare_parameter('frame_id','camera_frame').value
         self.raw=self.declare_parameter('publish_raw',False).value
         adaptive=self.declare_parameter('adaptive_exposure',True).value
-        maximum=int(self.declare_parameter('max_exposure_ms',100).value)
+        maximum=int(self.declare_parameter('max_exposure_ms',1000).value)
         if maximum<=0:raise ValueError('max_exposure_ms must be positive')
         self.exposure=AutoExposure(self.device,maximum*10,self.get_logger().info) if adaptive else None
         if not 0<fps<=60 or not 1<=self.quality<=100 or min(self.width,self.height)<1:raise ValueError('Invalid camera parameters')

@@ -388,7 +388,7 @@ Discordには動画ファイルを添付せず、共有URLだけを送る（動�
 ### USB camera exposure
 
 `geniac_camera` measures frame luminance once per second and adjusts V4L2
-exposure time (`adaptive_exposure=true`). The default upper bound is 100 ms
+exposure time (`adaptive_exposure=true`). The default upper bound is 1000 ms (1 second)
 (`max_exposure_ms`); changes are gradual with a brightness deadband. On control
 failure or clean shutdown it restores hardware auto exposure. Reconnection
 initializes the controller again. This requires `v4l2-ctl` from `v4l-utils`.

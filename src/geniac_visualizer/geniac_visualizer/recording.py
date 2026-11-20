@@ -5,8 +5,9 @@ import os
 import signal
 import subprocess
 import uuid
+import time
 
-TOPICS = ['/livox/lidar','/livox/imu','/geniac_detector/tracks','/geniac_detector/markers',
+TOPICS = ['/livox/lidar','/livox/imu','/camera/image_raw/compressed','/camera/image_raw','/camera/camera_info','/geniac_detector/tracks','/geniac_detector/markers',
           '/geniac_detector/diagnostics','/geniac/behavior','/geniac/scenario/state',
           '/geniac/scenario/tree','/geniac/scenario/events','/tf','/tf_static']
 
@@ -31,6 +32,20 @@ class Recorder:
         except OSError:
             self.log.close();self.log=None;self.error='Failed to start ros2 bag';return False,self.error
         return True,str(self.output)
+
+    def wait_ready(self,timeout=8.):
+        deadline=time.monotonic()+timeout
+        while time.monotonic()<deadline:
+            if not self.running():return False,'Recorder exited before becoming ready'
+            try:
+                text=Path(self.log.name).read_text(errors='replace')
+                if 'Recording...' in text or 'Recording started' in text:
+                    # Allow subscription discovery before the first scenario/audio frame.
+                    time.sleep(.5)
+                    return self.running(),'Recording ready: '+str(self.output)
+            except OSError:pass
+            time.sleep(.1)
+        self.stop();return False,'Recording readiness timed out; audio has not started'
 
     def stop(self):
         if not self.running():

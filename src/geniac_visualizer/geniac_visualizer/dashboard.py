@@ -10,7 +10,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, DurabilityPolicy, qos_profile_sensor_data
-from sensor_msgs.msg import PointCloud2, Image
+from sensor_msgs.msg import PointCloud2, Image, CompressedImage
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from ament_index_python.packages import get_package_share_directory
@@ -73,6 +73,10 @@ class CameraView(QtWidgets.QWidget):
         if msg.width<=0 or msg.height<=0 or msg.step<msg.width*channels or len(msg.data)<msg.step*msg.height:return
         image=QtGui.QImage(bytes(msg.data),msg.width,msg.height,msg.step,fmt).copy()
         self.image=image.rgbSwapped() if msg.encoding=='bgr8' else image;self.received=time.monotonic();self.update()
+    def receive_compressed(self,msg):
+        image=QtGui.QImage.fromData(bytes(msg.data))
+        if image.isNull():return
+        self.image=image;self.received=time.monotonic();self.update()
     def paintEvent(self,event):
         p=QtGui.QPainter(self);p.fillRect(self.rect(),QtGui.QColor('#111c27'))
         if self.image is not None and time.monotonic()-self.received<2:
@@ -127,6 +131,7 @@ class Dashboard(QtWidgets.QMainWindow):
         node.create_subscription(PointCloud2,'/livox/lidar',self.pointcloud,qos_profile_sensor_data)
         camera_topic=node.declare_parameter('camera_topic','/camera/image_raw').value
         node.create_subscription(Image,camera_topic,self.camera.receive,qos_profile_sensor_data)
+        node.create_subscription(CompressedImage,camera_topic+'/compressed',self.camera.receive_compressed,qos_profile_sensor_data)
         self.timer=QtCore.QTimer(self);self.timer.timeout.connect(self.tick);self.timer.start(50)
 
     def packet(self,kind,msg):
@@ -176,6 +181,7 @@ class Dashboard(QtWidgets.QMainWindow):
         if scenario.get('reason')=='awaiting_behavior':playing='音声終了・行動確定待ち'
         if scenario.get('reason')=='repeat_interval':playing=f"次の衝撃音まで {scenario.get('repeat_remaining_seconds',0.):.3f}秒"
         if scenario.get('waiting')=='story_stock':playing='ストーリー補充待ち'
+        if scenario.get('waiting')=='recording_start':playing='録画開始待ち（音声待機中）'
         errors={'input_stale':'行動データの更新途絶で停止','input_invalid':'行動データが無効のため停止',
                 'audio_playback_error':'音声再生エラーで停止','audio_start_error':'音声開始エラーで停止','input_unknown':'行動判定の確定待ち'}
         if scenario.get('reason') in errors:playing=errors[scenario['reason']]

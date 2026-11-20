@@ -37,6 +37,9 @@ class ScenarioNode(Node):
         self.core.tree['repeat_gap_max_seconds']=2.0
         self.paths=audio_paths(self.core.tree,path.parent,require=not self.dry_run and self.stock is None)
         self.player=Player(volume,self.dry_run)
+        self.auto_record=self.declare_parameter('auto_record',False).value
+        self.record_client=self.create_client(Trigger,'/geniac/recording/auto_start')
+        self.record_future=None;self.prepared_tree=None;self.record_retry_at=0.
         self.report=None;self.received=None;self.playback_offset=0.
         qos=QoSProfile(depth=1,durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.pub=self.create_publisher(String,'/geniac/scenario/state',qos)
@@ -80,6 +83,25 @@ class ScenarioNode(Node):
         self.tree_pub.publish(String(data=json.dumps(tree)))
         return tree
 
+    def prepare_episode(self):
+        if not self.auto_record:return self.select_stock() if self.stock else self.core.tree
+        if self.prepared_tree is None:
+            self.prepared_tree=self.select_stock() if self.stock else self.core.tree
+        if self.prepared_tree is None:return None
+        if time.monotonic()<self.record_retry_at:return None
+        if self.record_future is None:
+            if self.record_client.service_is_ready():self.record_future=self.record_client.call_async(Trigger.Request())
+            return None
+        if not self.record_future.done():return None
+        try:response=self.record_future.result();success=response.success
+        except Exception:success=False
+        self.record_future=None
+        if not success:
+            self.record_retry_at=time.monotonic()+3
+            self.get_logger().error('Automatic recording unavailable; scenario audio held')
+            return None
+        tree=self.prepared_tree;self.prepared_tree=None;return tree
+
     def receive(self,msg):
         try:
             data=json.loads(msg.data)
@@ -102,14 +124,20 @@ class ScenarioNode(Node):
         now=time.monotonic();stamp=self.get_clock().now().nanoseconds/1e9
         fresh=(self.report is not None and self.received is not None and now-self.received<1.
                and self.report.get('valid') is True and 0<=stamp-self.report['stamp']<1.)
+        eligible=(self.campaign.armed and fresh and any(t.get('present') is True and t.get('stationary_seconds',0)>=2.
+                  and t.get('label') not in ('unknown','escaped') for t in (self.report or {}).get('targets',[])))
+        if self.auto_record and not self.core.running and not self.campaign.paused and not eligible:
+            self.record_future=None
         if self.player.failed():
             changed=self.campaign.pause('audio_playback_error',now)
             if changed:self.campaign.pause_elapsed=self.playback_offset
             self.player.stop()
         else:
             changed=self.campaign.tick(now,stamp,self.report or {},fresh,
-                                       self.select_stock if self.stock else None,
+                                       self.prepare_episode if self.stock or self.auto_record else None,
                                        input_reason='input_invalid' if self.report is not None and self.report.get('valid') is not True else 'input_stale')
+        if self.auto_record and eligible and self.prepared_tree is not None and not self.core.running:
+            self.campaign.waiting='recording_start'
         trial=self.campaign.trial
         if trial and trial.trial_id!=self.counted_trial:
             if self.test_mode or self.dry_run:
@@ -141,6 +169,7 @@ class ScenarioNode(Node):
                 self.get_logger().error(f'Scenario stopped: {self.core.reason}; receive_age={age}s; report_age={report_age}s; valid={self.report.get("valid") if self.report else None}; audio={self.player.last_error}')
             self.events.publish(String(data=json.dumps(self.core.state())))
         d=self.core.state();d.update(armed=self.campaign.armed,dry_run=self.dry_run,stamp=stamp,
+            recording_pending=bool(self.auto_record and eligible and self.prepared_tree is not None),
             campaign_active=self.campaign.active,round=self.campaign.round,waiting=self.campaign.waiting,paused=self.campaign.paused,
             story=self.core.tree.get('story',{}),last_evaluation=self.campaign.last_result)
         self.pub.publish(String(data=json.dumps(d,allow_nan=False)))

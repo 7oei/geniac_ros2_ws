@@ -312,3 +312,24 @@ ros2 run geniac_scenario integration_test
 画面に先頭から開始・一時停止・再開・停止・音声切替を用意しています。一時停止と終了時には音声も止めます。bag終端はセンサー終了として扱い、架空の完全退避を発生させません。検出が安定して停止2秒を満たさなければシナリオは開始しません。認識済み区間の切り出しbagを使うと未検出時間が失われるため、このテストには元bagを指定してください。
 
 `events.jsonl`に検出・行動・シナリオ遷移、`outcomes.jsonl`に試行結果、`summary.json`に検出あり回数とシナリオ開始回数を保存します。結果はbag_testモードとして実機・simulation/manualの最高評価選択から除外します。シナリオストックは通常と共通で、テスト済みになった未使用ストックは使用済みへ進みます。外部通知や録画開始、録画内の制御指令の再生は行いません。
+
+### k5実機運用（マザーとWi-Fi接続）
+
+- k5: `scripts/geniac-sensor`（HAPドライバは別途 `/livox/lidar` を配信）。
+- マザー: `scripts/geniac-mother`（ビジュアライザーのみ）。
+- ROS_DOMAIN_ID=105、CycloneDDS、マザー192.168.1.42 / k5 192.168.1.64。
+  IP変更時は `GENIAC_PEER_IP`、NIC変更時は `GENIAC_INTERFACE` で上書きする。
+  k5で有線LANとWi-Fiが同じサブネットの場合、マザー宛てのOS経路もWi-Fiにする。
+- k5の `.env` に `DISCORD_WEBHOOK_URL` を配置する（Gitには含めない）。
+  鹿候補が視界に入ると通知する。誤検出も通知対象となる。
+- USBカメラ `/dev/video0` を1280×720、JPEG・10Hzで
+  `/camera/image_raw/compressed` に配信する。キャリブレーションは未実施。
+- シナリオ開始前にk5でrosbagの起動完了を確認し、完全退避後に保存する。
+  保存先は `~/geniac_bags/`。LiDAR、カメラ圧縮画像、追跡、行動、
+  シナリオ状態とイベントを含む。入力途絶による一時停止中も録画は継続する。
+  手動録画は自動終了せず、GUIの停止ボタンで終了する。
+- 自動録画無効時のみ `auto_record:=false` を指定できる。
+  `recording_service:=false` を使う際は別途録画ノードを起動するか、自動録画も無効にする。
+- 常駐: `scripts/deploy/geniac-sensor.service` を `~/.config/systemd/user/` に配置し、
+  `systemctl --user enable --now geniac-sensor`。ログは
+  `journalctl --user -u geniac-sensor -f`。セッション外での起動にはlinger設定が必要。

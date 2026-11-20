@@ -1,0 +1,11 @@
+[Unit]
+Description=GENIAC stationary LiDAR, camera and scenario service
+After=network-online.target
+[Service]
+Type=simple
+ExecStart=%h/geniac_ros2_ws/scripts/geniac-sensor
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+[Install]
+WantedBy=default.target

@@ -1,5 +1,9 @@
 """Verified tar.zst archives, public-link readiness and bounded local retention."""
 import hashlib
+import http.client
+import ipaddress
+import socket
+import ssl
 import json
 import os
 import secrets
@@ -72,11 +76,34 @@ def compress(bag,directory):
         if partial.exists() and not partial.is_symlink():partial.unlink()
 
 
+def public_connection(url,method='HEAD',headers=None):
+    """Resolve through public DNS, bypassing Tailscale's private split DNS."""
+    u=urlsplit(url)
+    if u.scheme!='https' or not u.hostname or u.port not in (None,443):raise ValueError('Invalid public HTTPS URL')
+    dns=requests.get('https://dns.google/resolve',params={'name':u.hostname,'type':'A'},timeout=(10,15))
+    dns.raise_for_status()
+    addresses=[a['data'] for a in dns.json().get('Answer',[]) if a.get('type')==1 and ipaddress.ip_address(a['data']).is_global]
+    if not addresses:raise ValueError('No public IPv4 address for download host')
+    for address in addresses:
+        connection=http.client.HTTPSConnection(u.hostname,timeout=20)
+        try:
+            raw=socket.create_connection((address,443),timeout=20)
+            try:connection.sock=ssl.create_default_context().wrap_socket(raw,server_hostname=u.hostname)
+            except Exception:raw.close();raise
+            connection.request(method,u.path or '/',headers=headers or {})
+            return connection,connection.getresponse()
+        except (OSError,http.client.HTTPException):connection.close()
+    raise OSError('Public download endpoint unavailable')
+
+
 def public_ready(url,size,checksum):
+    connection=None
     try:
-        r=requests.head(url,timeout=(10,20),allow_redirects=False)
-        return r.status_code==200 and int(r.headers.get('Content-Length','-1'))==size and r.headers.get('ETag')=='"'+checksum+'"'
-    except (requests.RequestException,ValueError):return False
+        connection,response=public_connection(url)
+        return response.status==200 and int(response.getheader('Content-Length','-1'))==size and response.getheader('ETag')=='"'+checksum+'"'
+    except (requests.RequestException,OSError,ValueError,http.client.HTTPException):return False
+    finally:
+        if connection:connection.close()
 
 
 class Archiver:

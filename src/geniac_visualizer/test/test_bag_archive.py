@@ -122,3 +122,28 @@ def test_recovery_waits_for_recorder_completion_callback(tmp_path):
     os.utime(path/'metadata.yaml',(time.time()-60,time.time()-60))
     w.step();assert q.rows()[0]['state']=='done'
     assert q.rows()[0]['outcome']=='interrupted/recovered'
+
+
+def test_public_probe_requires_exact_size_and_hash_header(monkeypatch):
+    from types import SimpleNamespace as NS
+    from geniac_visualizer.bag_archive import public_ready
+    closed=[];headers={'Content-Length':'123','ETag':'"abc"'}
+    response=NS(status=200,getheader=lambda key,default=None:headers.get(key,default))
+    monkeypatch.setattr('geniac_visualizer.bag_archive.public_connection',lambda url:(NS(close=lambda:closed.append(1)),response))
+    assert public_ready('https://example.test',123,'abc')
+    assert not public_ready('https://example.test',124,'abc')
+    assert not public_ready('https://example.test',123,'different')
+    assert len(closed)==3
+
+
+def test_public_probe_does_not_use_private_tailnet_addresses(monkeypatch):
+    from types import SimpleNamespace as NS
+    from geniac_visualizer.bag_archive import public_connection
+    response=NS(raise_for_status=lambda:None,json=lambda:{'Answer':[{'type':1,'data':'100.84.76.44'},{'type':1,'data':'103.84.155.217'}]})
+    monkeypatch.setattr('geniac_visualizer.bag_archive.requests.get',lambda *a,**k:response)
+    connections=[];names=[]
+    monkeypatch.setattr('geniac_visualizer.bag_archive.socket.create_connection',lambda address,timeout:connections.append(address) or NS(close=lambda:None))
+    monkeypatch.setattr('geniac_visualizer.bag_archive.ssl.create_default_context',lambda:NS(wrap_socket=lambda sock,server_hostname:names.append(server_hostname) or sock))
+    monkeypatch.setattr('geniac_visualizer.bag_archive.http.client.HTTPSConnection',lambda *a,**k:NS(sock=None,request=lambda *a,**k:None,getresponse=lambda:'ok',close=lambda:None))
+    c,r=public_connection('https://k5.example.test/bags/token/file')
+    assert r=='ok' and connections==[('103.84.155.217',443)] and names==['k5.example.test']

@@ -1,0 +1,34 @@
+version: 1
+root: warning
+nodes:
+  warning:
+    title: 接近を知らせる音
+    level: 1
+    audio: null
+    duration: 12.0
+    min_dwell: 5.0
+    branches: {escaped: gentle, retreated_nearby: caution, no_escape: strong, unknown: finish}
+  caution:
+    title: 移動・視界内・追加の警告
+    level: 2
+    audio: null
+    duration: 12.0
+    min_dwell: 5.0
+    branches: {escaped: gentle, retreated_nearby: gentle, no_escape: strong, unknown: finish}
+  strong:
+    title: 退避なし・銃声などの強い音
+    level: 3
+    audio: null
+    duration: 10.0
+    min_dwell: 5.0
+    branches: {escaped: gentle, retreated_nearby: gentle, no_escape: finish, unknown: finish}
+  gentle:
+    title: 退避反応・穏やかな音へ
+    level: 0
+    audio: null
+    duration: 6.0
+    min_dwell: 5.0
+    branches: {escaped: finish, retreated_nearby: finish, no_escape: finish, unknown: finish}
+  finish:
+    title: 終了・クールダウン
+    terminal: true

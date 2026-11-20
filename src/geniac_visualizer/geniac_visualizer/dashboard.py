@@ -1,0 +1,208 @@
+"""Mother-PC desktop dashboard. ROS services execute recording on the sensor host."""
+import json
+import math
+from pathlib import Path
+import subprocess
+import sys
+import time
+import numpy as np
+from PyQt5 import QtCore, QtGui, QtWidgets
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import QoSProfile, DurabilityPolicy, qos_profile_sensor_data
+from sensor_msgs.msg import PointCloud2, Image
+from std_msgs.msg import String
+from std_srvs.srv import Trigger
+from ament_index_python.packages import get_package_share_directory
+from geniac_detector.cloud import decode_cloud
+from .view_model import ViewModel, tree_layers
+from .position_view import PositionView,NAMES
+from .stock_panel import StockPanel
+from .story_graph import StoryGraph
+
+class CloudView(QtWidgets.QWidget):
+    def __init__(self,model):
+        super().__init__();self.model=model;self.setMinimumSize(480,360)
+    def paintEvent(self,event):
+        p=QtGui.QPainter(self);p.fillRect(self.rect(),QtGui.QColor('#111c27'))
+        p.setRenderHint(QtGui.QPainter.Antialiasing)
+        if not self.model.fresh('cloud'):
+            p.setPen(QtGui.QColor('#94a3b8'));p.drawText(self.rect(),QtCore.Qt.AlignCenter,'点群未接続');p.end();return
+        # Pinhole view at the LiDAR origin: x forward, y left, z up.
+        focal=self.width()/(2*math.tan(math.radians(60)))
+        def project(point):
+            x,y,z=map(float,point[:3])
+            if not all(math.isfinite(v) for v in (x,y,z)) or x<=.2:return None
+            return QtCore.QPointF(self.width()/2-focal*y/x,self.height()/2-focal*z/x)
+        p.setPen(QtGui.QPen(QtGui.QColor('#304657'),1))
+        p.drawLine(0,self.height()//2,self.width(),self.height()//2)
+        p.drawLine(self.width()//2-5,self.height()//2,self.width()//2+5,self.height()//2)
+        # Draw distant points first so nearby objects remain visible.
+        cloud=np.asarray(self.model.cloud)
+        for row in sorted(cloud,key=lambda v:float(v[0]) if math.isfinite(v[0]) else -1,reverse=True):
+            at=project(row)
+            if at is None or not self.rect().contains(at.toPoint()):continue
+            distance=float(np.linalg.norm(row[:3]))
+            color=QtGui.QColor.fromHsvF(min(distance/45.,1.)*.65,.65,1.)
+            p.setPen(QtGui.QPen(color,2));p.drawPoint(at)
+        labels={t['id'].split(':')[-1]:t.get('label','') for t in self.model.behavior.get('targets',[])}
+        for t in self.model.tracks:
+            at=project(t['center'])
+            if at is None:continue
+            p.setPen(QtGui.QPen(QtGui.QColor('#ff785a'),2))
+            if 'lo' in t and 'hi' in t:
+                corners=[project([t['hi' if mask&(1<<axis) else 'lo'][axis] for axis in range(3)]) for mask in range(8)]
+                for mask in range(8):
+                    for axis in range(3):
+                        other=mask^(1<<axis)
+                        if mask<other and corners[mask] is not None and corners[other] is not None:
+                            p.drawLine(corners[mask],corners[other])
+            else:p.drawEllipse(at,7,7)
+            p.drawText(at+QtCore.QPointF(10,-5),f"ID {t['track_id']}  {t['score']:.2f}  {labels.get(str(t['track_id']), '')}")
+        p.setPen(QtGui.QColor('white'));p.drawText(12,22,'LiDAR主観・前方視点（水平120°／色：近=赤、遠=青）')
+        if not self.model.fresh('tracks'):p.drawText(12,45,'検知結果待機 / 通信途絶')
+        p.end()
+
+class CameraView(QtWidgets.QWidget):
+    def __init__(self):
+        super().__init__();self.image=None;self.received=0.;self.setMinimumSize(320,150)
+    def receive(self,msg):
+        formats={'rgb8':(3,QtGui.QImage.Format_RGB888),'bgr8':(3,QtGui.QImage.Format_RGB888),'mono8':(1,QtGui.QImage.Format_Grayscale8)}
+        if msg.encoding not in formats:return
+        channels,fmt=formats[msg.encoding]
+        if msg.width<=0 or msg.height<=0 or msg.step<msg.width*channels or len(msg.data)<msg.step*msg.height:return
+        image=QtGui.QImage(bytes(msg.data),msg.width,msg.height,msg.step,fmt).copy()
+        self.image=image.rgbSwapped() if msg.encoding=='bgr8' else image;self.received=time.monotonic();self.update()
+    def paintEvent(self,event):
+        p=QtGui.QPainter(self);p.fillRect(self.rect(),QtGui.QColor('#111c27'))
+        if self.image is not None and time.monotonic()-self.received<2:
+            image=self.image.scaled(self.size(),QtCore.Qt.KeepAspectRatio,QtCore.Qt.SmoothTransformation)
+            p.drawImage((self.width()-image.width())//2,(self.height()-image.height())//2,image)
+        else:p.setPen(QtGui.QColor('#94a3b8'));p.drawText(self.rect(),QtCore.Qt.AlignCenter,'カメラ未接続')
+        p.end()
+
+
+class Dashboard(QtWidgets.QMainWindow):
+    def __init__(self,node,interactive=False,spin=None):
+        super().__init__();self.node=node;self.spin=spin or (lambda:rclpy.spin_once(node,timeout_sec=0))
+        self.model=ViewModel();self.futures=[];self.rviz=None;self.last_tree_key=None;self.interactive=interactive
+        self.setWindowTitle('GENIAC — '+('ドラッグ位置入力・統合テスト' if interactive else '鹿の認識・反応・シナリオ'))
+        self.resize(1500,960)
+        central=QtWidgets.QWidget();self.setCentralWidget(central);layout=QtWidgets.QVBoxLayout(central)
+        self.status=QtWidgets.QLabel('接続待機');self.status.setWordWrap(True);layout.addWidget(self.status)
+        self.toolbar=QtWidgets.QHBoxLayout();layout.addLayout(self.toolbar)
+        if not interactive:
+            for title,service in [('シナリオ開始（待受）','/geniac/scenario/start'),('音声停止','/geniac/scenario/stop'),
+                                  ('センサーPCで録画開始','/geniac/recording/start'),('録画停止','/geniac/recording/stop')]:
+                button=QtWidgets.QPushButton(title);button.clicked.connect(lambda checked=False,s=service:self.call(s));self.toolbar.addWidget(button)
+            button=QtWidgets.QPushButton('RVizで3D表示');button.clicked.connect(self.open_rviz);self.toolbar.addWidget(button)
+        self.result=QtWidgets.QLabel('実機からの入力を待っています。' if not interactive else 'テスト開始後、鹿をドラッグしてください。放すと固定。破線の外に出して5秒で完全退避。');layout.addWidget(self.result)
+        self.stock_panel=StockPanel();layout.addWidget(self.stock_panel)
+        columns=QtWidgets.QSplitter();layout.addWidget(columns,1)
+        left=QtWidgets.QSplitter(QtCore.Qt.Vertical);columns.addWidget(left)
+        bottom=QtWidgets.QSplitter()
+        self.media=QtWidgets.QGroupBox('カメラ・LiDAR');media_layout=QtWidgets.QVBoxLayout(self.media)
+        media_split=QtWidgets.QSplitter(QtCore.Qt.Vertical);media_layout.addWidget(media_split)
+        self.camera=CameraView();self.cloud=CloudView(self.model);self.cloud.setMinimumSize(320,150)
+        media_split.addWidget(self.camera);media_split.addWidget(self.cloud)
+        left.addWidget(self.media);left.addWidget(bottom)
+        self.position=PositionView(self.model,interactive);bottom.addWidget(self.position)
+        graph_panel=QtWidgets.QGroupBox('現在のシナリオツリー');gl=QtWidgets.QVBoxLayout(graph_panel)
+        nav=QtWidgets.QHBoxLayout();gl.addLayout(nav)
+        self.graph=StoryGraph();self.scene=self.graph.scene()
+        for text,fn in [('全体表示',self.graph.fit_all),('現在地',self.graph.focus_current)]:
+            button=QtWidgets.QPushButton(text);button.clicked.connect(fn);nav.addWidget(button)
+        gl.addWidget(self.graph);columns.addWidget(graph_panel)
+        text_panel=QtWidgets.QGroupBox('ストーリー・前回からの改善');tl=QtWidgets.QVBoxLayout(text_panel)
+        self.details=QtWidgets.QPlainTextEdit();self.details.setReadOnly(True);tl.addWidget(self.details);bottom.addWidget(text_panel)
+        columns.setSizes([960,500]);left.setSizes([580,300]);bottom.setSizes([480,480])
+        columns.setStretchFactor(0,2);columns.setStretchFactor(1,1)
+        left.setStretchFactor(0,2);left.setStretchFactor(1,1)
+        bottom.setStretchFactor(0,1);bottom.setStretchFactor(1,1)
+        self.clients={s:node.create_client(Trigger,s) for s in ['/geniac/scenario/start','/geniac/scenario/stop','/geniac/recording/start','/geniac/recording/stop']}
+        qos=QoSProfile(depth=1,durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        for topic,kind,quality in [('/geniac_detector/tracks','tracks',1),('/geniac/behavior','behavior',10),
+                ('/geniac/scenario/stock','stock',qos),('/geniac/scenario/state','scenario',qos),('/geniac/scenario/tree','tree',qos),('/geniac/recording/status','recording',10)]:
+            node.create_subscription(String,topic,lambda m,k=kind:self.packet(k,m),quality)
+        node.create_subscription(PointCloud2,'/livox/lidar',self.pointcloud,qos_profile_sensor_data)
+        camera_topic=node.declare_parameter('camera_topic','/camera/image_raw').value
+        node.create_subscription(Image,camera_topic,self.camera.receive,qos_profile_sensor_data)
+        self.timer=QtCore.QTimer(self);self.timer.timeout.connect(self.tick);self.timer.start(50)
+
+    def packet(self,kind,msg):
+        try:self.model.update(kind,json.loads(msg.data))
+        except (ValueError,KeyError,TypeError):self.result.setText('不正な'+kind+'メッセージを破棄')
+    def pointcloud(self,msg):
+        if msg.header.frame_id!='livox_frame':self.result.setText('点群のframe_idがlivox_frameと異なります');return
+        try:
+            points=decode_cloud(msg,200000);self.model.update('cloud',points[::max(1,len(points)//5000)])
+        except (ValueError,TypeError):self.result.setText('点群形式を読み取れません')
+    def call(self,service):
+        c=self.clients[service]
+        if not c.service_is_ready():self.result.setText('サービス未接続: '+service);return
+        if any(s==service for s,f in self.futures):return
+        self.futures.append((service,c.call_async(Trigger.Request())));self.result.setText('要求中: '+service)
+    def open_rviz(self):
+        if self.rviz and self.rviz.poll() is None:return
+        cfg=Path(get_package_share_directory('geniac_visualizer'))/'config/geniac.rviz'
+        try:self.rviz=subprocess.Popen(['rviz2','-d',str(cfg)])
+        except OSError:self.result.setText('rviz2が見つかりません')
+    def draw_tree(self):
+        tree=self.model.tree
+        if not tree.get('nodes'):return
+        key=json.dumps(tree,sort_keys=True)
+        if key!=self.last_tree_key:self.last_tree_key=key;self.graph.set_tree(tree)
+        scenario=self.model.scenario
+        self.graph.update_state(scenario.get('node'),bool(scenario.get('paused')),scenario.get('transitions',[]))
+        if scenario.get('reason')=='repeat_interval' and scenario.get('node') in self.graph.nodes:
+            self.graph.nodes[scenario['node']].set_caption('次の衝撃音を待機')
+        if scenario.get('paused') and scenario.get('node') in self.graph.nodes:
+            self.graph.nodes[scenario['node']].set_caption('復旧待ち（自動再開）')
+        if scenario.get('reason')=='awaiting_behavior' and scenario.get('node') in self.graph.nodes:
+            item=self.graph.nodes[scenario['node']];item.set_caption('行動の確定待ち（自動）')
+    def tick(self):
+        self.spin();self.stock_panel.show_status(getattr(self.model,'stock',{}),self.model.fresh('stock',timeout=5.));self.model.expire();self.cloud.update();self.camera.update();self.position.update();self.draw_tree()
+        for service,future in list(self.futures):
+            if future.done():
+                try:
+                    response=future.result();self.result.setText(('成功: ' if response.success else '失敗: ')+response.message)
+                except Exception:self.result.setText('サービス呼び出し失敗')
+                self.futures.remove((service,future))
+        scenario=self.model.scenario;behavior=self.model.behavior;story=scenario.get('story',{})
+        pending=sum(t.get('present') is False and t.get('label')=='observing' for t in behavior.get('targets',[]))
+        number=story.get('sequence');title=f"No.{number:04d} " if isinstance(number,int) else ''
+        state=NAMES.get(behavior.get('state'),'判定待ち')
+        playing='再生中' if scenario.get('running') else ('2秒停止を待っています' if scenario.get('armed') else '停止中')
+        if scenario.get('reason')=='awaiting_behavior':playing='音声終了・行動確定待ち'
+        if scenario.get('reason')=='repeat_interval':playing=f"次の衝撃音まで {scenario.get('repeat_remaining_seconds',0.):.3f}秒"
+        if scenario.get('waiting')=='story_stock':playing='ストーリー補充待ち'
+        errors={'input_stale':'行動データの更新途絶で停止','input_invalid':'行動データが無効のため停止',
+                'audio_playback_error':'音声再生エラーで停止','audio_start_error':'音声開始エラーで停止','input_unknown':'行動判定の確定待ち'}
+        if scenario.get('reason') in errors:playing=errors[scenario['reason']]
+        if scenario.get('paused'):playing=playing.replace('で停止','で一時停止')+'（復旧後に自動再開）'
+        self.status.setText(f"鹿 {len(self.model.tracks)}頭 / 退避確認待ち {pending}頭 / {state} ｜ {title}{story.get('title','シナリオ待機')} ｜ {playing}")
+        green=behavior.get('state')=='escaped' and behavior.get('valid') is True
+        self.centralWidget().setStyleSheet('QWidget#centralPanel {border:3px solid '+('#22c55e' if green else '#64748b')+';}')
+        self.centralWidget().setObjectName('centralPanel')
+        current=self.model.tree.get('nodes',{}).get(scenario.get('node'),{})
+        variation=story.get('variation',{})
+        text=title+story.get('title','シナリオを待っています')+'\n\n'+story.get('premise','')
+        text+='\n\n現在の場面：'+current.get('title','—')+'\n'+current.get('narrative','')
+        text+='\n\n前回からの改善・変更\n'+story.get('change','未設定')
+        text+='\n\n人数：'+str(variation.get('actor_count','—'))+' ／ '+ '・'.join(variation.get('roles',[]))
+        text+='\n車両：'+variation.get('vehicle','—')+' ／ 武器：'+variation.get('weapon','—')
+        text+='\n音の配置：'+variation.get('sound_arrangement','—')
+        outline=story.get('outline',[])
+        if outline:text+='\n\nストーリーの流れ\n'+' → '.join(n.get('title','') for n in outline if n.get('narrative'))
+        text+='\n\n進行：'+('模擬入力による統合テスト（実地の評価には含めません）' if self.interactive else 'センサー入力')
+        if self.details.toPlainText()!=text:self.details.setPlainText(text)
+    def closeEvent(self,event):self.timer.stop();event.accept()
+
+
+def main(args=None):
+    rclpy.init(args=args);app=QtWidgets.QApplication(sys.argv[:1]);node=Node('geniac_dashboard')
+    window=Dashboard(node);window.show()
+    try:app.exec_()
+    finally:
+        node.destroy_node()
+        if rclpy.ok():rclpy.shutdown()

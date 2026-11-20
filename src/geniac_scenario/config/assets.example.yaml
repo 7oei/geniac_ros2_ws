@@ -1,0 +1,28 @@
+# Copy outside share/ and replace paths with local recordings.
+# Audio and compiled trees are not committed. Keep actual license/attribution text.
+assets:
+  approach:
+    file: /absolute/path/to/approach.wav
+    description: 接近音・足音など
+    license: REPLACE_WITH_ACTUAL_LICENSE
+    attribution: REPLACE_WITH_ACTUAL_ATTRIBUTION
+  gentle:
+    file: /absolute/path/to/gentle.wav
+    description: 穏やかな環境音
+    license: REPLACE_WITH_ACTUAL_LICENSE
+    attribution: REPLACE_WITH_ACTUAL_ATTRIBUTION
+  gunshot:
+    file: /absolute/path/to/gunshot.wav
+    description: 銃声の録音
+    license: REPLACE_WITH_ACTUAL_LICENSE
+    attribution: REPLACE_WITH_ACTUAL_ATTRIBUTION
+# For --llm, these timelines are designed offline instead.
+timelines:
+  warning:
+    - {asset_id: approach, start: 0.0, source_start: 0.0, duration: 3.0, gain_db: -12.0}
+  caution:
+    - {asset_id: approach, start: 0.0, source_start: 0.0, duration: 3.0, gain_db: -9.0}
+  strong:
+    - {asset_id: gunshot, start: 1.0, source_start: 0.0, duration: 1.0, gain_db: -9.0}
+  gentle:
+    - {asset_id: gentle, start: 0.0, source_start: 0.0, duration: 5.0, gain_db: -18.0}

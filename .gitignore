@@ -31,3 +31,7 @@ __pycache__/
 *.ply
 *.mp3
 *.wav
+
+/scenario_data/
+/artifacts/
+/test-results/

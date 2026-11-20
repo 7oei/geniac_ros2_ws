@@ -1,0 +1,19 @@
+geniac_detector:
+  ros__parameters:
+    input_topic: /livox/lidar
+    expected_frame: livox_frame
+    tf_prefix: deer_
+    processing_rate_hz: 10.0
+    min_score: 0.8
+    confirm_score: 0.8
+    publish_tentative: false
+    min_ground_quality: 0.35
+    max_range: 45.0
+    max_speed_mps: 10.0
+    position_tolerance_m: 0.2
+    max_points: 200000
+    max_cloud_age_s: 0.35
+    max_future_stamp_s: 0.05
+    input_timeout_s: 0.5
+    publish_markers: true
+    model_path: ''

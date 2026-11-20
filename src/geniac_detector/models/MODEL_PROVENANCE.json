@@ -1,0 +1,11 @@
+{
+  "model": "camera-assisted RF v2; inference LiDAR-only",
+  "model_sha256": "206ed80c0a010eda90bf1857ac7fb21d89f9e8219946e6c724bfd9c1223ac5a7",
+  "core_sha256": {
+    "detector.py": "e8c5bc39f36a68d55906cd3609f17210ac491dae3f8be51ffe422063c5eb5408",
+    "classifier.py": "c9b0c77a96b0f1d2dfa5b9c7a4380a2d6752412c9584d67ff0c2df3730370677",
+    "tracking.py": "32cddb20512e1fda7e7d4c37c3be878ab1bd75e846685cd7b868f681acbaf51b"
+  },
+  "fixture_source": "data/survey/10_50_40_00201.0.npz; captured HAP cloud used for transport tests, not accuracy validation",
+  "fixture_sha256": "13a07e24459f36cd84909ec0a4d5a3719e6231420251d75bfd879274230c1a4b"
+}

@@ -1,0 +1,167 @@
+version: 1
+root: arrival
+story:
+  opponent: human
+  variant: 0
+  weather:
+    surface: grass
+    date: example
+    source: dry-run example, not current weather
+    location: 北海道標津町崎無異
+  premise: 森にいる鹿を狩ろうとする猟師。鹿が退避したら狩りを中止する。
+interrupt_on_escape: true
+needs:
+  footsteps:
+    description: 草をかき分ける足音
+    query: footsteps walking grass
+  search:
+    description: 衣服と道具の擦れる音
+    query: clothes rustling jacket
+  prepare:
+    description: 銃を構える際の金属と衣擦れ
+    query: rifle handling foley
+  attack:
+    description: 単発の銃声
+    query: single rifle gunshot
+nodes:
+  arrival:
+    title: 猟師が森へ入る
+    narrative: 鹿を探す猟師が遠くから近づく。草をかき分ける足音が小さく聞こえる。
+    duration: 8
+    min_dwell: 8
+    level: 1
+    audio: null
+    cues:
+    - role: footsteps
+      start: 0
+      duration: 6
+      gain_db: -22
+    branches:
+      escaped: withdraw
+      retreated_nearby: watch
+      no_escape: search
+      unknown: uncertain_end
+  search:
+    title: 鹿の気配を探す
+    narrative: 猟師が立ち止まり、気配を探してから数歩進む。
+    duration: 8
+    min_dwell: 8
+    level: 1
+    audio: null
+    cues:
+    - role: search
+      start: 0
+      duration: 2
+      gain_db: -20
+    - role: footsteps
+      start: 3
+      duration: 4
+      gain_db: -18
+    branches:
+      escaped: withdraw
+      retreated_nearby: watch
+      no_escape: approach
+      unknown: uncertain_end
+  approach:
+    title: 鹿へ忍び寄る
+    narrative: 鹿を見つけた猟師が歩みを遅くして距離を詰める。
+    duration: 8
+    min_dwell: 8
+    level: 2
+    audio: null
+    cues:
+    - role: footsteps
+      start: 0
+      duration: 5
+      gain_db: -14
+    - role: search
+      start: 5.5
+      duration: 1.5
+      gain_db: -18
+    branches:
+      escaped: withdraw
+      retreated_nearby: watch
+      no_escape: prepare
+      unknown: uncertain_end
+  watch:
+    title: 動いた鹿を見守る
+    narrative: 猟師は足を止めて様子を見る。鹿が離れ続ければ追跡を諦める。
+    duration: 6
+    min_dwell: 6
+    level: 1
+    audio: null
+    cues:
+    - role: search
+      start: 0
+      duration: 2
+      gain_db: -24
+    branches:
+      escaped: withdraw
+      retreated_nearby: withdraw
+      no_escape: prepare
+      unknown: uncertain_end
+  prepare:
+    title: 狩りの直前
+    narrative: 猟師が銃を構えて待つ。発砲前に鹿の反応をもう一度確認する。
+    duration: 6
+    min_dwell: 6
+    level: 2
+    audio: null
+    cues:
+    - role: prepare
+      start: 0
+      duration: 3
+      gain_db: -16
+    branches:
+      escaped: withdraw
+      retreated_nearby: withdraw
+      no_escape: attack
+      unknown: uncertain_end
+  attack:
+    title: 単発の発砲
+    narrative: 直前の分岐で逃げないと判定された場合だけ、単発の銃声を鳴らす。
+    duration: 2
+    min_dwell: 2
+    level: 3
+    audio: null
+    cues:
+    - role: attack
+      start: 0
+      duration: 1.5
+      gain_db: -16
+    branches:
+      escaped: withdraw
+      retreated_nearby: retry_end
+      no_escape: retry_end
+      unknown: uncertain_end
+  withdraw:
+    title: 追跡をやめて遠ざかる
+    narrative: 鹿を追うのをやめ、猟師の草をかき分ける足音が遠ざかる。発砲はしない。
+    duration: 6
+    min_dwell: 6
+    level: 0
+    audio: null
+    cues:
+    - role: footsteps
+      start: 0
+      duration: 2
+      gain_db: -24
+    - role: footsteps
+      start: 3
+      duration: 2
+      gain_db: -34
+    branches:
+      escaped: escaped_end
+      retreated_nearby: retry_end
+      no_escape: retry_end
+      unknown: uncertain_end
+    escape_tail: true
+  escaped_end:
+    terminal: true
+    title: 完全退避・終了
+  retry_end:
+    terminal: true
+    title: まだ視界内・次の物語を最初から
+  uncertain_end:
+    terminal: true
+    title: 反応確認待ち

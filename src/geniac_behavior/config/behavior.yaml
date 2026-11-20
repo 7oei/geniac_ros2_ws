@@ -1,0 +1,9 @@
+geniac_behavior:
+  ros__parameters:
+    stationary_radius: 0.75
+    stop_speed: 0.35
+    settle_seconds: 2.0
+    observation_seconds: 4.0
+    missing_seconds: 5.0
+    stale_seconds: 1.0
+    max_history: 600

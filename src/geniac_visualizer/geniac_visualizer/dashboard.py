@@ -1,5 +1,6 @@
 """Mother-PC desktop dashboard. ROS services execute recording on the sensor host."""
 import json
+import signal
 import math
 from pathlib import Path
 import subprocess
@@ -128,7 +129,8 @@ class Dashboard(QtWidgets.QMainWindow):
         for topic,kind,quality in [('/geniac_detector/tracks','tracks',1),('/geniac/behavior','behavior',10),
                 ('/geniac/scenario/stock','stock',qos),('/geniac/scenario/state','scenario',qos),('/geniac/scenario/tree','tree',qos),('/geniac/recording/status','recording',10)]:
             node.create_subscription(String,topic,lambda m,k=kind:self.packet(k,m),quality)
-        node.create_subscription(PointCloud2,'/livox/lidar',self.pointcloud,qos_profile_sensor_data)
+        self.cloud_topic=node.declare_parameter('cloud_topic','/livox/lidar').value
+        node.create_subscription(PointCloud2,self.cloud_topic,self.pointcloud,qos_profile_sensor_data)
         camera_topic=node.declare_parameter('camera_topic','/camera/image_raw').value
         node.create_subscription(Image,camera_topic,self.camera.receive,qos_profile_sensor_data)
         node.create_subscription(CompressedImage,camera_topic+'/compressed',self.camera.receive_compressed,qos_profile_sensor_data)
@@ -158,7 +160,7 @@ class Dashboard(QtWidgets.QMainWindow):
     def open_rviz(self):
         if self.rviz and self.rviz.poll() is None:return
         cfg=Path(get_package_share_directory('geniac_visualizer'))/'config/geniac.rviz'
-        try:self.rviz=subprocess.Popen(['rviz2','-d',str(cfg)])
+        try:self.rviz=subprocess.Popen(['rviz2','-d',str(cfg),'--ros-args','-r','/livox/lidar:='+self.cloud_topic])
         except OSError:self.result.setText('rviz2が見つかりません')
     def draw_tree(self):
         tree=self.model.tree
@@ -216,6 +218,8 @@ class Dashboard(QtWidgets.QMainWindow):
 def main(args=None):
     rclpy.init(args=args);app=QtWidgets.QApplication(sys.argv[:1]);node=Node('geniac_dashboard')
     window=Dashboard(node);window.show()
+    signal.signal(signal.SIGINT,lambda *_:app.quit())
+    signal.signal(signal.SIGTERM,lambda *_:app.quit())
     try:app.exec_()
     finally:
         node.destroy_node()

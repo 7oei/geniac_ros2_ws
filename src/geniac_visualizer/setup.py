@@ -10,4 +10,4 @@ setup(name=NAME, version='0.1.0', packages=find_packages(exclude=['test']),
       install_requires=['setuptools'], zip_safe=False,
       maintainer='GENIAC developers', maintainer_email='kulala.mbili@gmail.com',
       description='Mother desktop visualization and remote bag recording', license='Proprietary', tests_require=['pytest'],
-      entry_points={'console_scripts': ['camera = geniac_visualizer.camera_node:main', 'dashboard = geniac_visualizer.dashboard:main', 'recorder = geniac_visualizer.recorder_node:main', 'discord_notifier = geniac_visualizer.discord_node:main']})
+      entry_points={'console_scripts': ['cloud_preview = geniac_visualizer.cloud_preview:main', 'camera = geniac_visualizer.camera_node:main', 'dashboard = geniac_visualizer.dashboard:main', 'recorder = geniac_visualizer.recorder_node:main', 'discord_notifier = geniac_visualizer.discord_node:main']})

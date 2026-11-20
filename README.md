@@ -318,6 +318,8 @@ ros2 run geniac_scenario integration_test
 - k5: `scripts/geniac-sensor`。`scripts/geniac-hap` は既存の
   `~/armadillo_ros2_ws` のHAPドライバと設定を使って `/livox/lidar` を配信する。
 - マザー: `scripts/geniac-mother`（ビジュアライザーのみ）。
+- マザー表示用の点群は `/geniac/visualization/cloud` に最大5000点・5Hzで配信する。
+  検知とrosbagには元の `/livox/lidar` の全点群を使う。
 - ROS_DOMAIN_ID=105、CycloneDDS、マザー192.168.1.42 / k5 192.168.1.64。
   IP変更時は `GENIAC_PEER_IP`、NIC変更時は `GENIAC_INTERFACE` で上書きする。
   k5で有線LANとWi-Fiが同じサブネットの場合、マザー宛てのOS経路もWi-Fiにする。

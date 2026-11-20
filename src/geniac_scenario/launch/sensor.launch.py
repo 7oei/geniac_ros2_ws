@@ -49,6 +49,7 @@ def generate_launch_description():
              condition=IfCondition(LaunchConfiguration('recording_service')),
              parameters=[{'output_dir':LaunchConfiguration('record_dir'),
                           'auto_record':ParameterValue(LaunchConfiguration('auto_record'),value_type=bool)}]),
+        Node(package='geniac_visualizer',executable='cloud_preview',output='screen',parameters=[sim]),
         Node(package='geniac_visualizer',executable='camera',name='geniac_camera',output='screen',
              condition=IfCondition(LaunchConfiguration('camera_enabled')),
              parameters=[sim,{'device':LaunchConfiguration('camera_device')}]),

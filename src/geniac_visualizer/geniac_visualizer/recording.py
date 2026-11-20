@@ -6,15 +6,17 @@ import signal
 import subprocess
 import uuid
 import time
+from .scenario_audio import PlaybackCapture
 
 TOPICS = ['/livox/lidar','/livox/imu','/camera/image_raw/compressed','/camera/image_raw','/camera/camera_info','/geniac_detector/tracks','/geniac_detector/markers',
           '/geniac_detector/diagnostics','/geniac/behavior','/geniac/scenario/state',
           '/geniac/scenario/tree','/geniac/scenario/events','/tf','/tf_static']
 
 class Recorder:
-    def __init__(self,root,spawn=subprocess.Popen,send_signal=os.killpg):
+    def __init__(self,root,spawn=subprocess.Popen,send_signal=os.killpg,capture_audio=False):
         self.root=Path(root).expanduser().resolve();self.spawn=spawn;self.send_signal=send_signal
         self.process=None;self.output=None;self.log=None;self.error=''
+        self.audio=PlaybackCapture(self.root) if capture_audio else None
 
     def running(self):
         return self.process is not None and self.process.poll() is None
@@ -24,12 +26,14 @@ class Recorder:
         self.root.mkdir(parents=True,exist_ok=True)
         name=datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')+'_'+uuid.uuid4().hex[:8]
         self.output=self.root/name;self.error=''
+        if self.audio:self.audio.start(name)
         if self.log:self.log.close()
         self.log=(self.root/(name+'.log')).open('w')
         try:
             self.process=self.spawn(['ros2','bag','record','-o',str(self.output),*TOPICS],
                 stdin=subprocess.DEVNULL,stdout=self.log,stderr=subprocess.STDOUT,start_new_session=True)
         except OSError:
+            if self.audio:self.audio.stop(self.output)
             self.log.close();self.log=None;self.error='Failed to start ros2 bag';return False,self.error
         return True,str(self.output)
 
@@ -48,6 +52,7 @@ class Recorder:
         self.stop();return False,'Recording readiness timed out; audio has not started'
 
     def stop(self):
+        if self.audio and self.audio.output:self.audio.stop(self.output)
         if not self.running():
             if self.log:self.log.close();self.log=None
             return False,'Recorder is not running'
@@ -73,4 +78,4 @@ class Recorder:
     def status(self):
         if self.process is not None and self.process.poll() not in (None,0) and not self.error:
             self.error='Recorder exited; inspect its local log'
-        return {'recording':self.running(),'output':str(self.output or ''),'error':self.error}
+        return {'recording':self.running(),'output':str(self.output or ''),'error':self.error,'audio_error':self.audio.error if self.audio else ''}

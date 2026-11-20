@@ -14,7 +14,8 @@ from .archive_queue import ArchiveQueue
 class RecorderNode(Node):
     def __init__(self,**kwargs):
         super().__init__('geniac_recorder',**kwargs)
-        self.recorder=Recorder(self.declare_parameter('output_dir',str(Path.home()/'geniac_bags')).value)
+        self.recorder=Recorder(self.declare_parameter('output_dir',str(Path.home()/'geniac_bags')).value,
+                               capture_audio=self.declare_parameter('capture_audio',False).value)
         self.archive_queue=ArchiveQueue(self.recorder.root) if self.declare_parameter('archive_enabled',False).value else None
         self.archive_started_output=None
         self.auto_enabled=self.declare_parameter('auto_record',False).value
@@ -42,6 +43,8 @@ class RecorderNode(Node):
         except ValueError:return
         self.last_scenario=time.monotonic()
         self.pending=data.get('recording_pending',False)
+        if data.get('running') and getattr(self.recorder,'audio',None) and self.recorder.running() and self.recorder.audio.output:
+            self.recorder.audio.bind(data.get('epoch','').split(':')[0])
         if getattr(self,'archive_queue',None) and data.get('running') and self.recorder.running():
             if self.archive_started_output!=self.recorder.output:
                 self.archive_queue.started(self.recorder.output,data.get('story',{}))

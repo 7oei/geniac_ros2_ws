@@ -32,6 +32,7 @@ class VideoWriter:
         self.name='screen_'+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')+'_'+uuid.uuid4().hex
         self.latest=first_frame;self.lock=threading.Lock();self.closed=threading.Event();self.error='';self.frames=0
         self.outcome='visualizer_closed';self.started=time.time();self.state=dict(state)
+        self.sensor_started=(float(state['stamp'])+max(0,time.monotonic()-state['_received_mono'])) if 'stamp' in state and '_received_mono' in state else self.started
         self.thread=threading.Thread(target=self.run,daemon=True);self.thread.start()
     def offer(self,frame):
         if len(frame)!=self.width*self.height*3:raise ValueError('Unexpected video frame size')
@@ -61,7 +62,7 @@ class VideoWriter:
             with pending.open('rb') as f:os.fsync(f.fileno())
             pending.replace(target)
             atomic_json(self.root/(self.name+'.json'),{'id':self.name,'created':self.started,
-                'episode':self.state.get('epoch','').split(':')[0],'story':self.state.get('story',{}),
+                'sensor_started':self.sensor_started,'episode':self.state.get('epoch','').split(':')[0],'story':self.state.get('story',{}),
                 'outcome':self.outcome,'duration':float(info['format']['duration']),
                 'frames':self.frames,'status':'ready','filename':target.name})
         except Exception as exc:

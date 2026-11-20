@@ -12,6 +12,7 @@ from pathlib import Path
 from .archive_queue import ArchiveQueue
 from .bag_archive import digest
 from .screen_video import atomic_json,video_info
+from .scenario_audio import mux_audio
 
 ID=re.compile(r'screen_[0-9]{8}T[0-9]{6}Z_[a-f0-9]{32}')
 
@@ -24,21 +25,35 @@ def import_video(root,name):
     if manifest.is_symlink() or source.is_symlink():raise ValueError('Invalid incoming file')
     data=json.loads(manifest.read_text())
     if data['id']!=name or not re.fullmatch('[a-f0-9]{64}',data['sha256']):raise ValueError('Invalid video manifest')
-    target=directory/(name+'_'+data['sha256'][:16]+'.mp4')
-    candidate=source if source.exists() else target
-    if candidate.is_symlink() or candidate.stat().st_size!=data['size'] or digest(candidate)!=data['sha256']:
+    with q.connect() as c:old=c.execute('SELECT * FROM jobs WHERE name=?',(name,)).fetchone()
+    if old:
+        source_hash=json.loads(old['story']).get('screen_source_sha256',old['sha256'])
+        if source_hash!=data['sha256']:raise ValueError('Video ID conflict')
+        if source.exists():source.unlink()
+        return {'id':name,'sha256':data['sha256'],'size':data['size'],'stored':True,'audio':json.loads(old['story']).get('screen_audio','unavailable')}
+    if source.stat().st_size!=data['size'] or digest(source)!=data['sha256']:
         raise ValueError('Video checksum mismatch')
-    info=video_info(candidate)
-    if source.exists():source.replace(target)
+    info=video_info(source)
+    muxed=incoming/(name+'.mux.mp4')
+    if muxed.is_symlink():raise ValueError('Invalid mux output')
+    selected,audio_status=mux_audio(q.root,data,source,muxed)
+    final_sha=digest(selected);final_size=selected.stat().st_size
+    target=directory/(name+'_'+final_sha[:16]+'.mp4')
+    if target.is_symlink():raise ValueError('Invalid video target')
+    # Keep the uploaded source until the receipt is committed, so interrupted mux/import retries are safe.
+    if selected==source:
+        import shutil
+        shutil.copyfile(source,target)
+    else:selected.replace(target)
     with target.open('rb') as f:os.fsync(f.fileno())
-    story=dict(data['story']);story['screen_episode']=data.get('episode','');story['screen_duration']=float(info['format']['duration'])
+    story=dict(data['story']);story.update(screen_episode=data.get('episode',''),screen_duration=float(info['format']['duration']),
+                                         screen_source_sha256=data['sha256'],screen_audio=audio_status)
     with q.connect() as c:
-        old=c.execute('SELECT sha256 FROM jobs WHERE name=?',(name,)).fetchone()
-        if old and old['sha256']!=data['sha256']:raise ValueError('Video ID conflict')
         c.execute('''INSERT OR IGNORE INTO jobs(name,created,story,state,outcome,archive,sha256,size,kind)
                      VALUES(?,?,?,?,?,?,?,?,?)''',(name,float(data['created']),json.dumps(story,ensure_ascii=False),'compressed',
-                     str(data['outcome']),target.name,data['sha256'],data['size'],'video'))
-    return {'id':name,'sha256':data['sha256'],'size':data['size'],'stored':True}
+                     str(data['outcome']),target.name,final_sha,final_size,'video'))
+    source.unlink()
+    return {'id':name,'sha256':data['sha256'],'size':data['size'],'stored':True,'audio':audio_status}
 
 
 def import_main():

@@ -148,7 +148,10 @@ class Dashboard(QtWidgets.QMainWindow):
             rclpy.spin_once(self.node,timeout_sec=0)
 
     def packet(self,kind,msg):
-        try:self.model.update(kind,json.loads(msg.data))
+        try:
+            data=json.loads(msg.data)
+            if kind=='scenario':data['_received_mono']=time.monotonic()
+            self.model.update(kind,data)
         except (ValueError,KeyError,TypeError):self.result.setText('不正な'+kind+'メッセージを破棄')
     def pointcloud(self,msg):
         if msg.header.frame_id!='livox_frame':self.result.setText('点群のframe_idがlivox_frameと異なります');return
@@ -219,7 +222,7 @@ class Dashboard(QtWidgets.QMainWindow):
             self.screen_capture.update(scenario,self.model.fresh('scenario'),self.capture_frame)
             status='録画中' if self.screen_capture.active else ('保存中' if self.screen_capture.finishing else '待受')
             if self.screen_capture.error:status='エラー: '+self.screen_capture.error
-            self.screen_status.setText('画面録画：'+status+'（MP4・音声なし）')
+            self.screen_status.setText('画面録画：'+status+'（MP4・k5音声は公開時に合成）')
     def capture_frame(self):
         source=self.grab().toImage()
         frame=QtGui.QImage(VideoWriter.width,VideoWriter.height,QtGui.QImage.Format_RGB888)

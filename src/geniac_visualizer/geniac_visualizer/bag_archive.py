@@ -164,4 +164,7 @@ class Archiver:
             if path.exists():
                 size=path.stat().st_size;path.unlink();total-=size
             self.queue.update(row['name'],pruned=1)
+            if row['kind']=='bag':
+                from .scenario_audio import prune_audio
+                prune_audio(self.queue.root,row['name'])
         return total

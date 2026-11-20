@@ -70,6 +70,8 @@ class ArchiveQueue:
             label='ビジュアライザー画面録画（MP4）' if row['kind']=='video' else 'ROSBAG'
             text=(f"GENIAC: シナリオ No.{story.get('sequence','—')} の{label}のダウンロード準備が完了しました。\n"
                   f"終了理由: {row['outcome']}\nファイル: {row['archive']}\n保存先: {receipt['url']}")
+            if row['kind']=='video':
+                text+='\n音声: '+('k5の再生出力を収録' if story.get('screen_audio')=='recorded_output' else '収録できなかったため無音（過去の録画を含む）')
             c.execute("UPDATE jobs SET state='done',error='' WHERE name=?",(name,))
             c.execute('INSERT OR IGNORE INTO outbox(id,text,created) VALUES(?,?,?)',(name+':ready',text,time.time()))
     def notify_once(self,webhook,send):

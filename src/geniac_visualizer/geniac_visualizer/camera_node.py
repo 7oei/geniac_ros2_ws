@@ -3,6 +3,7 @@ import signal
 import time
 import cv2
 from .exposure import AutoExposure
+from .frame_sum import FrameSum
 import rclpy
 from rclpy.node import Node
 from rclpy.executors import ExternalShutdownException
@@ -23,6 +24,10 @@ class CameraNode(Node):
         adaptive=self.declare_parameter('adaptive_exposure',True).value
         maximum=int(self.declare_parameter('max_exposure_ms',1000).value)
         if maximum<=0:raise ValueError('max_exposure_ms must be positive')
+        self.stack_enabled=self.declare_parameter('frame_sum_enabled',True).value
+        self.stack=FrameSum(float(self.declare_parameter('frame_sum_target',127.).value),
+                            int(self.declare_parameter('frame_sum_max_frames',64).value))
+        self.stack_log=0.
         self.exposure=AutoExposure(self.device,maximum*10,self.get_logger().info) if adaptive else None
         if not 0<fps<=60 or not 1<=self.quality<=100 or min(self.width,self.height)<1:raise ValueError('Invalid camera parameters')
         self.pub=self.create_publisher(CompressedImage,'/camera/image_raw/compressed',3)
@@ -40,9 +45,16 @@ class CameraNode(Node):
         ok,image=self.capture.read()
         if not ok:
             if self.exposure:self.exposure.close()
+            self.stack.reset()
             self.capture.release();self.capture=None;self.retry=time.monotonic()+2
             self.get_logger().warning('Camera frame unavailable; retrying in 2s');return
+        # Exposure feedback always uses the original frame, never the brightened sum.
+        at_limit=bool(self.exposure and self.exposure.active and self.exposure.current>=self.exposure.maximum)
         if self.exposure:self.exposure.update(image)
+        image=self.stack.apply(image,self.stack_enabled and at_limit)
+        if self.stack.frames and time.monotonic()>=self.stack_log:
+            self.get_logger().info(f'Frame sum: {len(self.stack.frames)} frames, mean={self.stack.level:.1f}/255, target={self.stack.target:g}')
+            self.stack_log=time.monotonic()+30
         stamp=self.get_clock().now().to_msg()
         ok,encoded=cv2.imencode('.jpg',image,[cv2.IMWRITE_JPEG_QUALITY,self.quality])
         if not ok:return

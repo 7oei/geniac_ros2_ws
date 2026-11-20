@@ -401,3 +401,14 @@ firmware physically achieves the requested integration time.
 Longer exposure may blur moving subjects; darkness without available light
 cannot be corrected by exposure alone. Hardware auto exposure remains available
 with `adaptive_exposure=false` (on a fresh camera or after clean shutdown).
+
+When adaptive exposure has reached its maximum, `frame_sum_enabled=true`
+adds recent frames until the clipped output mean luminance reaches
+`frame_sum_target=127`. A fractional final gain avoids overshooting. The sliding
+window discards older frames as soon as enough newer frames are available.
+`frame_sum_max_frames=64` bounds memory/history; all-black or heavily clipped
+scenes may still fail to reach the target. During warmup the partial sum is
+published immediately. Motion produces trails and sensor noise also accumulates.
+Exposure feedback uses the original image; published JPEG/raw images (including
+those recorded in bags) use the summed image. History resets on reconnect,
+when exposure drops below its maximum, or when a single frame is bright enough.

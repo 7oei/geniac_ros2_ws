@@ -28,7 +28,7 @@ class RecorderNode(Node):
             response.success=False;response.message='Automatic recording disabled';return response
         self.last_scenario=time.monotonic()
         if self.recorder.running():
-            response.success=True;response.message='Existing recording continues';return response
+            response.success,response.message=self.recorder.wait_ready();return response
         response.success,response.message=self.recorder.start()
         if response.success:response.success,response.message=self.recorder.wait_ready()
         self.auto_owned=response.success;self.auto_seen_running=False

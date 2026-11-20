@@ -63,3 +63,10 @@ def test_dashboard_drains_multiple_callbacks_without_blocking(monkeypatch):
     Dashboard.drain_ros(NS(node=object()))
     assert 1<len(calls)<=64
     assert set(calls)=={0}
+
+
+def test_manual_bag_must_also_be_ready_before_audio():
+    n=NS(auto_enabled=True,last_scenario=None,auto_owned=False,
+         recorder=NS(running=lambda:True,wait_ready=lambda:(False,'Not ready')))
+    result=RecorderNode.start_auto(n,None,NS())
+    assert not result.success and not n.auto_owned

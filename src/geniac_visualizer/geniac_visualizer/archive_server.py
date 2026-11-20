@@ -35,7 +35,7 @@ class DownloadHandler(BaseHTTPRequestHandler):
     def do_HEAD(self):self.download(False)
     def do_GET(self):self.download(True)
     def download(self,body):
-        match=re.fullmatch(r'/bags/([A-Za-z0-9_-]{43})/([A-Za-z0-9_.-]+\.tar\.zst)',urlsplit(self.path).path)
+        match=re.fullmatch(r'/bags/([A-Za-z0-9_-]{43})/([A-Za-z0-9_.-]+\.(?:tar\.zst|mp4))',urlsplit(self.path).path)
         if not match:self.send_error(404);return
         token,name=match.groups()
         row=next((r for r in self.server.queue.rows() if r['state'] in ('published','done') and not r['pruned']
@@ -59,8 +59,8 @@ class DownloadHandler(BaseHTTPRequestHandler):
                 if not partial:
                     self.send_response(416);self.send_header('Content-Range',f'bytes */{size}');self.end_headers();return
             self.send_response(206 if partial else 200)
-            self.send_header('Content-Type','application/zstd');self.send_header('Content-Length',str(end-start+1))
-            self.send_header('Content-Disposition',f'attachment; filename="{name}"')
+            self.send_header('Content-Type','video/mp4' if name.endswith('.mp4') else 'application/zstd');self.send_header('Content-Length',str(end-start+1))
+            self.send_header('Content-Disposition',('inline' if name.endswith('.mp4') else 'attachment')+f'; filename="{name}"')
             self.send_header('Accept-Ranges','bytes');self.send_header('ETag',etag)
             self.send_header('Cache-Control','private, no-store');self.send_header('X-Robots-Tag','noindex, nofollow')
             self.send_header('Referrer-Policy','no-referrer');self.send_header('X-Content-Type-Options','nosniff')

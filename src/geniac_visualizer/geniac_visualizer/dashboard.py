@@ -20,6 +20,7 @@ from .view_model import ViewModel, tree_layers
 from .position_view import PositionView,NAMES
 from .stock_panel import StockPanel
 from .story_graph import StoryGraph
+from .screen_video import ScreenCapture,VideoWriter
 
 class CloudView(QtWidgets.QWidget):
     def __init__(self,model):
@@ -93,9 +94,11 @@ class Dashboard(QtWidgets.QMainWindow):
         self.model=ViewModel();self.futures=[];self.rviz=None;self.last_tree_key=None;self.interactive=interactive
         self.setWindowTitle('GENIAC — '+('ドラッグ位置入力・統合テスト' if interactive else '鹿の認識・反応・シナリオ'))
         self.resize(1500,960)
+        self.screen_capture=ScreenCapture(node.declare_parameter('screen_record_dir',str(Path.home()/'geniac_screen_recordings')).value) if node.declare_parameter('screen_record',False).value and not interactive else None
         central=QtWidgets.QWidget();self.setCentralWidget(central);layout=QtWidgets.QVBoxLayout(central)
         self.status=QtWidgets.QLabel('接続待機');self.status.setWordWrap(True);layout.addWidget(self.status)
         self.toolbar=QtWidgets.QHBoxLayout();layout.addLayout(self.toolbar)
+        self.screen_status=QtWidgets.QLabel('画面録画：待受' if self.screen_capture else '');layout.addWidget(self.screen_status)
         if not interactive:
             for title,service in [('シナリオ開始（待受）','/geniac/scenario/start'),('音声停止','/geniac/scenario/stop'),
                                   ('センサーPCで録画開始','/geniac/recording/start'),('録画停止','/geniac/recording/stop')]:
@@ -212,7 +215,22 @@ class Dashboard(QtWidgets.QMainWindow):
         if outline:text+='\n\nストーリーの流れ\n'+' → '.join(n.get('title','') for n in outline if n.get('narrative'))
         text+='\n\n進行：'+('模擬入力による統合テスト（実地の評価には含めません）' if self.interactive else 'センサー入力')
         if self.details.toPlainText()!=text:self.details.setPlainText(text)
-    def closeEvent(self,event):self.timer.stop();event.accept()
+        if self.screen_capture:
+            self.screen_capture.update(scenario,self.model.fresh('scenario'),self.capture_frame)
+            status='録画中' if self.screen_capture.active else ('保存中' if self.screen_capture.finishing else '待受')
+            if self.screen_capture.error:status='エラー: '+self.screen_capture.error
+            self.screen_status.setText('画面録画：'+status+'（MP4・音声なし）')
+    def capture_frame(self):
+        source=self.grab().toImage()
+        frame=QtGui.QImage(VideoWriter.width,VideoWriter.height,QtGui.QImage.Format_RGB888)
+        frame.fill(QtCore.Qt.black)
+        scaled=source.scaled(frame.size(),QtCore.Qt.KeepAspectRatio,QtCore.Qt.SmoothTransformation)
+        painter=QtGui.QPainter(frame);painter.drawImage((frame.width()-scaled.width())//2,(frame.height()-scaled.height())//2,scaled);painter.end()
+        bits=frame.bits();bits.setsize(frame.byteCount());return bytes(bits)
+    def closeEvent(self,event):
+        self.timer.stop()
+        if self.screen_capture:self.screen_capture.close()
+        event.accept()
 
 
 def main(args=None):
@@ -222,5 +240,7 @@ def main(args=None):
     signal.signal(signal.SIGTERM,lambda *_:app.quit())
     try:app.exec_()
     finally:
+        window.timer.stop()
+        if window.screen_capture:window.screen_capture.close()
         node.destroy_node()
         if rclpy.ok():rclpy.shutdown()

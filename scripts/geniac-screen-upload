@@ -1,0 +1,6 @@
+#!/bin/bash
+set -e
+GENIAC_WS=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+source /opt/ros/humble/setup.bash
+source "$GENIAC_WS/install/local_setup.bash"
+exec ros2 run geniac_visualizer screen_upload "$@"

@@ -117,7 +117,7 @@ class Archiver:
         if limit<=0:raise ValueError('Archive limit must be positive')
         self.base=base_url.rstrip('/');self.limit=limit;self.delete_raw=delete_raw;self.probe=probe
     def archive_path(self,name):
-        if Path(name).name!=name or not name.endswith('.tar.zst'):raise ValueError('Invalid archive name')
+        if Path(name).name!=name or not name.endswith(('.tar.zst','.mp4')):raise ValueError('Invalid archive name')
         p=self.directory/name
         if p.is_symlink():raise ValueError('Invalid archive path')
         return p
@@ -150,13 +150,13 @@ class Archiver:
         receipt['url']=self.base+'/bags/'+receipt['token']+'/'+path.name
         self.queue.published(row['name'],receipt)
         if not self.probe(receipt['url'],row['size'],row['sha256']):raise ValueError('Public download is not ready; original bag retained')
-        if self.delete_raw and bag.exists():
+        if row['kind']=='bag' and self.delete_raw and bag.exists():
             if inventory(bag)!=json.loads(row['inventory']):raise ValueError('Original bag changed; deletion refused')
             shutil.rmtree(bag)
         self.queue.completed(row['name'])
     def prune(self):
         # Never remove unfinished archives or arbitrary files not owned by this queue.
-        rows=self.queue.rows();total=sum(p.stat().st_size for p in self.directory.glob('*.tar.zst') if p.is_file() and not p.is_symlink())
+        rows=self.queue.rows();total=sum(p.stat().st_size for p in self.directory.iterdir() if p.name.endswith(('.tar.zst','.mp4')) and p.is_file() and not p.is_symlink())
         for row in rows:
             if total<=self.limit:break
             if row['state']!='done' or row['pruned'] or not row['archive']:continue

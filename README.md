@@ -487,3 +487,28 @@ The production mother wrapper enables `webrtc_enabled`; offline ROS bag test GUI
 can continue using the ROS image subscriptions with it disabled. Video recording
 still captures the rendered widget; its microphone soundtrack is recorded locally
 on k5 and muxed at publication, independent of WebRTC packet loss.
+
+### RealSense D435 (standalone, local-only)
+
+On k5 the official ROS Humble RealSense packages are extracted under
+`~/.local/opt/geniac-realsense` instead of installing into the OS with sudo.
+`./scripts/install-d435-user` downloads the ROS/Ubuntu packages and extracts them;
+`./scripts/geniac-d435` supplies the relocated library/ament/Python search paths.
+Verified versions: realsense2_camera 4.59.1 and librealsense2 2.59.1, D435 serial
+733512070553, device firmware 5.12.5 (not changed). Existing video-device ACLs
+allow capture through V4L2; no root/udev changes were made.
+
+`geniac-d435.service` runs color and depth at 640x480 / 15 fps in loopback ROS
+domain 106. Topics: `/d435/camera/color/image_raw`,
+`/d435/camera/depth/image_rect_raw`, and the corresponding `camera_info` topics.
+Point-cloud generation and depth-to-color alignment are disabled initially.
+This is standalone: the existing USB camera, WebRTC source, and episode bag topic
+list are not switched to D435. The LAN bridge does not export D435 images.
+
+Read-only verification on k5:
+```
+source /opt/ros/humble/setup.bash
+source ~/geniac_ros2_ws/scripts/geniac-local-network.sh
+python3 ~/geniac_ros2_ws/scripts/check_d435.py
+```
+The package sources are the [official ROS RealSense distribution](https://github.com/realsenseai/realsense-ros).

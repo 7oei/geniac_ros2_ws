@@ -1,0 +1,18 @@
+#!/bin/bash
+# Official ROS/Ubuntu .deb packages, relocated into this user's home (no sudo).
+set -euo pipefail
+GENIAC_WS=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+GENIAC_RS_CACHE="$GENIAC_WS/artifacts/d435-install"
+GENIAC_RS_ROOT="$HOME/.local/opt/geniac-realsense"
+mkdir -p "$GENIAC_RS_CACHE" "$GENIAC_RS_ROOT"
+cd "$GENIAC_RS_CACHE"
+apt-get download ros-humble-realsense2-camera ros-humble-librealsense2 \
+  ros-humble-realsense2-camera-msgs ros-humble-realsense2-description \
+  ros-humble-xacro libglfw3 libglfw3-dev
+for package in ./*.deb; do
+  dpkg-deb -x "$package" "$GENIAC_RS_ROOT"
+done
+for package in ./*.deb; do
+  dpkg-deb -f "$package" Package Version
+ done > "$GENIAC_RS_ROOT/packages.txt"
+echo "User-local RealSense packages ready: $GENIAC_RS_ROOT"

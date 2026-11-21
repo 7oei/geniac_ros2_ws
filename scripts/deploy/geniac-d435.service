@@ -1,0 +1,10 @@
+[Unit]
+Description=GENIAC RealSense D435 local color and depth
+After=network.target
+[Service]
+ExecStart=%h/geniac_ros2_ws/scripts/geniac-d435
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+[Install]
+WantedBy=default.target

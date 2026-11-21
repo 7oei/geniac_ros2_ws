@@ -1,0 +1,17 @@
+#!/bin/bash
+set -e
+GENIAC_WS=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+source /opt/ros/humble/setup.bash
+GENIAC_RS_ROOT="$HOME/.local/opt/geniac-realsense"
+GENIAC_RS_PREFIX="$GENIAC_RS_ROOT/opt/ros/humble"
+if test -d "$GENIAC_RS_PREFIX/share/realsense2_camera"; then
+  export AMENT_PREFIX_PATH="$GENIAC_RS_PREFIX:${AMENT_PREFIX_PATH:-}"
+  export LD_LIBRARY_PATH="$GENIAC_RS_PREFIX/lib:$GENIAC_RS_PREFIX/lib/x86_64-linux-gnu:$GENIAC_RS_ROOT/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-}"
+  export PYTHONPATH="$GENIAC_RS_PREFIX/local/lib/python3.10/dist-packages:$GENIAC_RS_PREFIX/lib/python3.10/site-packages:${PYTHONPATH:-}"
+fi
+source "$GENIAC_WS/scripts/geniac-local-network.sh"
+exec ros2 launch realsense2_camera rs_launch.py \
+  camera_namespace:=d435 camera_name:=camera \
+  enable_color:=true enable_depth:=true enable_infra1:=false enable_infra2:=false \
+  rgb_camera.color_profile:=640x480x15 depth_module.depth_profile:=640x480x15 \
+  pointcloud.enable:=false align_depth.enable:=false "$@"

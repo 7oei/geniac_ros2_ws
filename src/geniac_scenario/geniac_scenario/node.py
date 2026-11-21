@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import time
 import socket
+from concurrent.futures import ThreadPoolExecutor
 import rclpy
 from rclpy.node import Node
 from rclpy.executors import ExternalShutdownException
@@ -40,6 +41,8 @@ class ScenarioNode(Node):
         self.auto_record=self.declare_parameter('auto_record',False).value
         self.record_client=self.create_client(Trigger,'/geniac/recording/auto_start')
         self.record_future=None;self.prepared_tree=None;self.record_retry_at=0.
+        self.preview=None;self.preview_future=None;self.preview_retry_at=0.
+        self.preview_worker=ThreadPoolExecutor(max_workers=1,thread_name_prefix="story_preview")
         self.report=None;self.received=None;self.playback_offset=0.
         qos=QoSProfile(depth=1,durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.pub=self.create_publisher(String,'/geniac/scenario/state',qos)
@@ -54,6 +57,7 @@ class ScenarioNode(Node):
         self.tree_pub.publish(String(data=json.dumps(self.core.tree)))
 
     def publish_stock(self):
+        self.refresh_preview()
         try:
             if self.stock:
                 try:data=json.loads((self.history.root/'status.json').read_text())
@@ -75,12 +79,36 @@ class ScenarioNode(Node):
     @property
     def core(self):return self.campaign.core
 
-    def select_stock(self):
-        path=self.stock.next(consume=not self.dry_run and not self.test_mode)
+    def load_preview(self):
+        path=self.stock.next(consume=False)
         if path is None:return None
         tree=runtime_tree(load_tree(path));tree['wait_for_observation']=True;tree['repeat_gap_max_seconds']=2.0
-        self.paths=audio_paths(tree,path.parent,require=not self.dry_run)
+        paths=audio_paths(tree,path.parent,require=not self.dry_run)
+        return tree,paths
+
+    def refresh_preview(self):
+        if not self.stock or self.campaign.active or self.campaign.paused or self.core.running or self.prepared_tree is not None:return
+        if self.preview is not None:return
+        if self.preview_future is not None:
+            if not self.preview_future.done():return
+            try:self.preview=self.preview_future.result()
+            except Exception as exc:self.get_logger().warning('Next story unavailable: '+type(exc).__name__)
+            self.preview_future=None;self.preview_retry_at=time.monotonic()+3
+            if self.preview is not None:self.tree_pub.publish(String(data=json.dumps(self.preview[0])))
+        elif time.monotonic()>=self.preview_retry_at:
+            self.preview_future=self.preview_worker.submit(self.load_preview)
+
+    def select_stock(self):
+        # Claim precisely the story displayed during standby, not another queue entry.
+        if self.preview is None:return None
+        tree,paths=self.preview
+        if not self.dry_run and not self.test_mode:
+            sid=tree.get('story',{}).get('id')
+            if not sid or not (self.history.claim(sid) or self.history.claim(sid,reuse=True)):
+                self.preview=None;return None
+        self.paths=paths
         self.tree_pub.publish(String(data=json.dumps(tree)))
+        self.preview=None
         return tree
 
     def prepare_episode(self):
@@ -168,13 +196,17 @@ class ScenarioNode(Node):
                 report_age=None if not self.report else round(stamp-self.report['stamp'],3)
                 self.get_logger().error(f'Scenario stopped: {self.core.reason}; receive_age={age}s; report_age={report_age}s; valid={self.report.get("valid") if self.report else None}; audio={self.player.last_error}')
             self.events.publish(String(data=json.dumps(self.core.state())))
+        preview_tree=self.prepared_tree if self.prepared_tree is not None else (self.preview[0] if self.preview is not None else None)
+        showing_next=preview_tree is not None and not self.campaign.active and not self.campaign.paused and not self.core.running
         d=self.core.state();d.update(armed=self.campaign.armed,dry_run=self.dry_run,stamp=stamp,
             recording_pending=bool(self.auto_record and eligible and self.prepared_tree is not None),
             campaign_active=self.campaign.active,round=self.campaign.round,waiting=self.campaign.waiting,paused=self.campaign.paused,
-            story=self.core.tree.get('story',{}),last_evaluation=self.campaign.last_result)
+            story=(preview_tree if showing_next else self.core.tree).get('story',{}),preview=showing_next,last_evaluation=self.campaign.last_result)
+        if showing_next:d.update(node=None,transitions=[])
         self.pub.publish(String(data=json.dumps(d,allow_nan=False)))
 
     def destroy_node(self):
+        self.preview_worker.shutdown(wait=False,cancel_futures=True)
         self.campaign.stop('shutdown');self.player.stop();return super().destroy_node()
 
 

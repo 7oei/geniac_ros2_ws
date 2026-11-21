@@ -17,6 +17,7 @@ class StockPanel(QtWidgets.QGroupBox):
         row=QtWidgets.QHBoxLayout();layout.addLayout(row)
         self.progress=QtWidgets.QProgressBar();self.progress.setMaximumHeight(19);row.addWidget(self.progress,1)
         self.detail=QtWidgets.QLabel();row.addWidget(self.detail,2)
+        self.progress.hide();self.detail.hide()
         self.show_status({},False)
     def show_status(self,data,fresh):
         if not fresh:
@@ -24,14 +25,9 @@ class StockPanel(QtWidgets.QGroupBox):
             self.progress.setRange(0,1);self.progress.setValue(0);self.progress.setFormat('状態不明')
             self.detail.clear();return
         state=data.get('status');ready=data.get('ready_count',0);reserve=data.get('reserve_count',0);target=data.get('target_count',3)
-        label=STAGES.get(state,'補充状況を確認中')
-        if state=='ready' and ready<target:label='補充待ち'
-        text=f'{label} ｜ 未使用 {ready}/{target}件 ｜ 再使用可能 {reserve}件'
         latest=data.get('latest_sequence')
-        text+=f' ｜ 最新ストーリー No.{latest:04d}' if isinstance(latest,int) else ' ｜ 最新ストーリー —'
-        if ready==0 and reserve:text+=' ｜ 新作待ち・予備で再生可能'
-        if data.get('billing_blocked'):text+=' ｜ 追加課金の許可待ち（有料API停止）'
-        if data.get('source_host'):text+=' ｜ '+str(data['source_host'])
+        number=f'{latest:04d}' if isinstance(latest,int) else '—'
+        text=f'未使用 {ready}件 ｜ 再使用可能 {reserve}件 ｜ 最新No.{number}'
         self.summary.setText(text)
         self.summary.setStyleSheet('color:#b45309;' if ready<target or data.get('billing_blocked') else 'color:#15803d;')
         number=data.get('sequence');prefix=f'No.{number:04d}　' if isinstance(number,int) else ''

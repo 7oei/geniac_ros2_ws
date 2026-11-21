@@ -120,7 +120,8 @@ class Dashboard(QtWidgets.QMainWindow):
             if not self.use_webrtc:
                 node.create_subscription(String,MICROPHONE_TOPIC,lambda m:self.microphone.receive(m.data,node.get_clock().now().nanoseconds/1e9),qos_profile_sensor_data)
         self.screen_status=QtWidgets.QLabel('画面録画：待受' if self.screen_capture else '');layout.addWidget(self.screen_status)
-        self.result=QtWidgets.QLabel('実機からの入力を待っています。' if not interactive else 'テスト開始後、鹿をドラッグしてください。放すと固定。破線の外に出して5秒で完全退避。');self.result.setWordWrap(True);layout.addWidget(self.result)
+        self.result=QtWidgets.QLabel('' if not interactive else 'テスト開始後、鹿をドラッグしてください。放すと固定。破線の外に出して5秒で完全退避。');self.result.setWordWrap(True);layout.addWidget(self.result)
+        if not interactive:self.result.hide()
         self.stock_panel=StockPanel();layout.addWidget(self.stock_panel)
         left=QtWidgets.QSplitter(QtCore.Qt.Vertical);layout.addWidget(left,1)
         self.media=QtWidgets.QGroupBox('カメラ');media_layout=QtWidgets.QVBoxLayout(self.media)
@@ -131,11 +132,8 @@ class Dashboard(QtWidgets.QMainWindow):
         cloud_layout.addWidget(self.cloud);right.addWidget(cloud_panel)
         left.addWidget(self.media)
         self.position=PositionView(self.model,interactive);left.addWidget(self.position)
-        graph_panel=QtWidgets.QGroupBox('現在のシナリオツリー');gl=QtWidgets.QVBoxLayout(graph_panel)
-        nav=QtWidgets.QHBoxLayout();gl.addLayout(nav)
+        graph_panel=QtWidgets.QGroupBox('現在のシナリオツリー');self.graph_panel=graph_panel;gl=QtWidgets.QVBoxLayout(graph_panel)
         self.graph=StoryGraph();self.scene=self.graph.scene()
-        for text,fn in [('全体表示',self.graph.fit_all),('現在地',self.graph.focus_current)]:
-            button=QtWidgets.QPushButton(text);button.clicked.connect(fn);nav.addWidget(button)
         gl.addWidget(self.graph);right.addWidget(graph_panel)
         text_panel=QtWidgets.QGroupBox('ストーリー・前回からの改善');tl=QtWidgets.QVBoxLayout(text_panel)
         self.details=QtWidgets.QPlainTextEdit();self.details.setReadOnly(True);tl.addWidget(self.details);left.addWidget(text_panel)
@@ -191,6 +189,8 @@ class Dashboard(QtWidgets.QMainWindow):
         except OSError:self.result.setText('rviz2が見つかりません')
     def draw_tree(self):
         tree=self.model.tree
+        number=tree.get('story',{}).get('sequence')
+        self.graph_panel.setTitle(f'現在のシナリオツリー No.{number:04d}' if isinstance(number,int) else '現在のシナリオツリー No.—')
         if not tree.get('nodes'):return
         key=json.dumps(tree,sort_keys=True)
         if key!=self.last_tree_key:self.last_tree_key=key;self.graph.set_tree(tree)

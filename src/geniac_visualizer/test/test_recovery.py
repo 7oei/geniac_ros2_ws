@@ -45,3 +45,12 @@ def test_video_recovery_preserves_episode_and_respects_lock(tmp_path,monkeypatch
     assert d['episode']=='b'*32 and d['story']['sequence']==42
     assert d['status']=='ready' and d['duration']==2.5
     assert not p.exists() and (tmp_path/(name+'.mp4')).exists()
+
+
+def test_deleted_bag_is_never_retried(tmp_path):
+    from geniac_visualizer.bag_archive import Archiver
+    q=ArchiveQueue(tmp_path);q.started(tmp_path/'deleted',{})
+    q.update('deleted',state='deleted',pruned=1)
+    Archiver(tmp_path,'https://example.test',probe=lambda *a:True).step()
+    row=q.rows()[0]
+    assert row['state']=='deleted' and row['attempts']==0 and not row['error']

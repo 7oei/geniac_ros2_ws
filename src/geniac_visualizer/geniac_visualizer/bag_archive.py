@@ -127,9 +127,11 @@ class Archiver:
         for row in self.queue.rows():
             metadata=self.queue.bag(row['name'])/'metadata.yaml'
             if row['state']=='recording' and metadata.is_file() and time.time()-metadata.stat().st_mtime>30:
-                self.queue.finished(self.queue.bag(row['name']),'interrupted/recovered')
+                from .recovery import recovery_lock
+                with recovery_lock(self.queue.directory/(row['name']+'.recording.lock')) as acquired:
+                    if acquired:self.queue.finished(self.queue.bag(row['name']),'interrupted/recovered')
         for row in self.queue.rows():
-            if row['state'] in ('recording','recording_error','done') or row['retry_at']>time.time():continue
+            if row['state'] not in ('queued','compressed','published') or row['retry_at']>time.time():continue
             try:self.process(row)
             except Exception as exc:
                 attempts=row['attempts']+1

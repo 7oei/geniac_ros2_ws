@@ -27,6 +27,8 @@ class StockPanel(QtWidgets.QGroupBox):
         label=STAGES.get(state,'補充状況を確認中')
         if state=='ready' and ready<target:label='補充待ち'
         text=f'{label} ｜ 未使用 {ready}/{target}件 ｜ 再使用可能 {reserve}件'
+        latest=data.get('latest_sequence')
+        text+=f' ｜ 最新ストーリー No.{latest:04d}' if isinstance(latest,int) else ' ｜ 最新ストーリー —'
         if ready==0 and reserve:text+=' ｜ 新作待ち・予備で再生可能'
         if data.get('billing_blocked'):text+=' ｜ 追加課金の許可待ち（有料API停止）'
         if data.get('source_host'):text+=' ｜ '+str(data['source_host'])

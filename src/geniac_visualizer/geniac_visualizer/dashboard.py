@@ -96,9 +96,14 @@ class Dashboard(QtWidgets.QMainWindow):
         self.setWindowTitle('GENIAC — '+('ドラッグ位置入力・統合テスト' if interactive else '鹿の認識・反応・シナリオ'))
         self.resize(1500,960)
         self.screen_capture=ScreenCapture(node.declare_parameter('screen_record_dir',str(Path.home()/'geniac_screen_recordings')).value) if node.declare_parameter('screen_record',False).value and not interactive else None
-        central=QtWidgets.QWidget();self.setCentralWidget(central);layout=QtWidgets.QVBoxLayout(central)
+        central=QtWidgets.QWidget();self.setCentralWidget(central);outer=QtWidgets.QVBoxLayout(central)
+        columns=QtWidgets.QSplitter();outer.addWidget(columns)
+        controls=QtWidgets.QWidget();columns.addWidget(controls);layout=QtWidgets.QVBoxLayout(controls)
+        layout.setContentsMargins(0,0,0,0)
         self.status=QtWidgets.QLabel('接続待機');self.status.setWordWrap(True);layout.addWidget(self.status)
-        self.toolbar=QtWidgets.QHBoxLayout();layout.addLayout(self.toolbar)
+        self.toolbar=QtWidgets.QGridLayout();layout.addLayout(self.toolbar)
+        def add_control(widget):
+            index=self.toolbar.count();self.toolbar.addWidget(widget,index//3,index%3)
         self.webrtc=None
         self.use_webrtc=node.declare_parameter('webrtc_enabled',False).value and not interactive
         self.microphone=MicrophoneMonitor() if not interactive else None
@@ -106,43 +111,38 @@ class Dashboard(QtWidgets.QMainWindow):
             self.mic_toggle=QtWidgets.QCheckBox('現地マイクを聞く');self.mic_toggle.setChecked(True)
             self.microphone.enabled=True
             self.mic_toggle.toggled.connect(lambda enabled:setattr(self.microphone,'enabled',enabled))
-            self.toolbar.addWidget(self.mic_toggle)
+            add_control(self.mic_toggle)
             self.mic_volume=QtWidgets.QSlider(QtCore.Qt.Horizontal);self.mic_volume.setRange(0,100);self.mic_volume.setValue(50);self.mic_volume.setMaximumWidth(100)
             self.mic_volume.setToolTip('マイクの試聴音量（録音音量は変わりません）')
             self.mic_volume.valueChanged.connect(lambda value:setattr(self.microphone,'volume',value))
-            self.toolbar.addWidget(self.mic_volume)
-            self.mic_status=QtWidgets.QLabel('マイク接続待機');self.toolbar.addWidget(self.mic_status)
+            add_control(self.mic_volume)
+            self.mic_status=QtWidgets.QLabel('マイク接続待機');self.mic_status.setWordWrap(True);add_control(self.mic_status)
             if not self.use_webrtc:
                 node.create_subscription(String,MICROPHONE_TOPIC,lambda m:self.microphone.receive(m.data,node.get_clock().now().nanoseconds/1e9),qos_profile_sensor_data)
         self.screen_status=QtWidgets.QLabel('画面録画：待受' if self.screen_capture else '');layout.addWidget(self.screen_status)
-        if not interactive:
-            for title,service in [('シナリオ開始（待受）','/geniac/scenario/start'),('音声停止','/geniac/scenario/stop'),
-                                  ('センサーPCで録画開始','/geniac/recording/start'),('録画停止','/geniac/recording/stop')]:
-                button=QtWidgets.QPushButton(title);button.clicked.connect(lambda checked=False,s=service:self.call(s));self.toolbar.addWidget(button)
-            button=QtWidgets.QPushButton('RVizで3D表示');button.clicked.connect(self.open_rviz);self.toolbar.addWidget(button)
-        self.result=QtWidgets.QLabel('実機からの入力を待っています。' if not interactive else 'テスト開始後、鹿をドラッグしてください。放すと固定。破線の外に出して5秒で完全退避。');layout.addWidget(self.result)
+        self.result=QtWidgets.QLabel('実機からの入力を待っています。' if not interactive else 'テスト開始後、鹿をドラッグしてください。放すと固定。破線の外に出して5秒で完全退避。');self.result.setWordWrap(True);layout.addWidget(self.result)
         self.stock_panel=StockPanel();layout.addWidget(self.stock_panel)
-        columns=QtWidgets.QSplitter();layout.addWidget(columns,1)
-        left=QtWidgets.QSplitter(QtCore.Qt.Vertical);columns.addWidget(left)
-        bottom=QtWidgets.QSplitter()
-        self.media=QtWidgets.QGroupBox('カメラ・LiDAR');media_layout=QtWidgets.QVBoxLayout(self.media)
-        media_split=QtWidgets.QSplitter(QtCore.Qt.Vertical);media_layout.addWidget(media_split)
+        left=QtWidgets.QSplitter(QtCore.Qt.Vertical);layout.addWidget(left,1)
+        self.media=QtWidgets.QGroupBox('カメラ');media_layout=QtWidgets.QVBoxLayout(self.media)
         self.camera=CameraView();self.cloud=CloudView(self.model);self.cloud.setMinimumSize(320,150)
-        media_split.addWidget(self.camera);media_split.addWidget(self.cloud)
-        left.addWidget(self.media);left.addWidget(bottom)
-        self.position=PositionView(self.model,interactive);bottom.addWidget(self.position)
+        media_layout.addWidget(self.camera)
+        right=QtWidgets.QSplitter(QtCore.Qt.Vertical);columns.addWidget(right)
+        cloud_panel=QtWidgets.QGroupBox('LiDAR点群');cloud_layout=QtWidgets.QVBoxLayout(cloud_panel)
+        cloud_layout.addWidget(self.cloud);right.addWidget(cloud_panel)
+        left.addWidget(self.media)
+        self.position=PositionView(self.model,interactive);left.addWidget(self.position)
         graph_panel=QtWidgets.QGroupBox('現在のシナリオツリー');gl=QtWidgets.QVBoxLayout(graph_panel)
         nav=QtWidgets.QHBoxLayout();gl.addLayout(nav)
         self.graph=StoryGraph();self.scene=self.graph.scene()
         for text,fn in [('全体表示',self.graph.fit_all),('現在地',self.graph.focus_current)]:
             button=QtWidgets.QPushButton(text);button.clicked.connect(fn);nav.addWidget(button)
-        gl.addWidget(self.graph);columns.addWidget(graph_panel)
+        gl.addWidget(self.graph);right.addWidget(graph_panel)
         text_panel=QtWidgets.QGroupBox('ストーリー・前回からの改善');tl=QtWidgets.QVBoxLayout(text_panel)
-        self.details=QtWidgets.QPlainTextEdit();self.details.setReadOnly(True);tl.addWidget(self.details);bottom.addWidget(text_panel)
-        columns.setSizes([960,500]);left.setSizes([580,300]);bottom.setSizes([480,480])
-        columns.setStretchFactor(0,2);columns.setStretchFactor(1,1)
-        left.setStretchFactor(0,2);left.setStretchFactor(1,1)
-        bottom.setStretchFactor(0,1);bottom.setStretchFactor(1,1)
+        self.details=QtWidgets.QPlainTextEdit();self.details.setReadOnly(True);tl.addWidget(self.details);left.addWidget(text_panel)
+        columns.setSizes([480,980]);left.setSizes([320,280,200])
+        right.setSizes([250,630]);right.setStretchFactor(0,1);right.setStretchFactor(1,3)
+        columns.setStretchFactor(0,1);columns.setStretchFactor(1,2)
+        left.setStretchFactor(0,3);left.setStretchFactor(1,3);left.setStretchFactor(2,2)
         self.clients={s:node.create_client(Trigger,s) for s in ['/geniac/scenario/start','/geniac/scenario/stop','/geniac/recording/start','/geniac/recording/stop']}
         qos=QoSProfile(depth=1,durability=DurabilityPolicy.TRANSIENT_LOCAL)
         for topic,kind,quality in [('/geniac_detector/tracks','tracks',1),('/geniac/behavior','behavior',10),

@@ -30,6 +30,9 @@ DEFAULT_STOCK=Path.home()/'.local/share/geniac/story_stock'
 
 def atomic_json(path,data):
     path=Path(path);path.parent.mkdir(parents=True,exist_ok=True)
+    if path.name=='status.json':
+        with History(path.parent).connect() as c:
+            data['latest_sequence']=c.execute('SELECT MAX(sequence) FROM stories WHERE path IS NOT NULL').fetchone()[0]
     temp=path.with_name(path.name+'.'+uuid.uuid4().hex+'.tmp')
     temp.write_text(json.dumps(data,ensure_ascii=False,indent=2));temp.replace(path)
 

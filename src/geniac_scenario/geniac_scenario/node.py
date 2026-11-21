@@ -61,7 +61,7 @@ class ScenarioNode(Node):
                 # Validation belongs to the stock worker, never the sensor executor.
                 # Its atomic status snapshot is sufficient for progress display.
             else:data={'status':'disabled','ready_count':0,'reserve_count':0,'target_count':0}
-            fields=('status','ready_count','reserve_count','target_count','sequence','completed','total','item','stage_started','updated_at','retry_seconds','error_type')
+            fields=('latest_sequence','status','ready_count','reserve_count','target_count','sequence','completed','total','item','stage_started','updated_at','retry_seconds','error_type')
             packet={key:data[key] for key in fields if key in data}
             packet.update(source_host=socket.gethostname(),billing_blocked=bool(billing_state(self.history.root).get('blocked')))
             self.stock_pub.publish(String(data=json.dumps(packet,ensure_ascii=False)))

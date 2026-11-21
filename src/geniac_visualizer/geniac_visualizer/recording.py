@@ -8,7 +8,7 @@ import uuid
 import time
 from .scenario_audio import PlaybackCapture
 
-TOPICS = ['/livox/lidar','/livox/imu','/camera/image_raw/compressed','/camera/image_raw','/camera/camera_info','/geniac_detector/tracks','/geniac_detector/markers',
+TOPICS = ['/camera/audio/pcm','/livox/lidar','/livox/imu','/camera/image_raw/compressed','/camera/image_raw','/camera/camera_info','/geniac_detector/tracks','/geniac_detector/markers',
           '/geniac_detector/diagnostics','/geniac/behavior','/geniac/scenario/state',
           '/geniac/scenario/tree','/geniac/scenario/events','/tf','/tf_static']
 

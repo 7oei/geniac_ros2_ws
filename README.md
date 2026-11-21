@@ -433,3 +433,23 @@ Install/enable the watchdog user unit on k5. Mother uses its own persistent user
 unit with restart-on-failure and graceful process-group shutdown. This recovers
 software faults while powered; it cannot repair a disconnected device, loss of
 power, storage exhaustion, or an unavailable external network.
+
+### Camera microphone
+
+k5's private PulseAudio server opens `hw:USBCamera,0` as `geniac_microphone`.
+There is no loopback to the k5 speaker. The microphone node publishes 40 ms
+chunks of 16 kHz mono signed-16 PCM to `/camera/audio/pcm` (`std_msgs/String`,
+JSON fields `stamp`, `rate`, `channels`, `format`, base64 `pcm`). The topic is
+included in ROSBAG. The mother dashboard can listen live, with a checkbox and
+volume slider; these affect monitoring only, not recording. Late audio is
+rejected and the playback queue is bounded to avoid growing latency.
+
+`GENIAC_RECORDING_AUDIO_SOURCE=geniac_microphone` selects the camera microphone
+for the existing lossless episode audio capture and MP4 synchronization. The
+sidecar keeps its historical `scenario_audio.mka` filename; metadata identifies
+the source. Published videos contain environmental audio and scenario sounds
+heard by the microphone; digital playback audio is not mixed over it a second
+time. The mother-local video remains silent until the k5 publication mux step.
+Existing recordings are not retroactively given microphone audio. The watchdog
+also monitors microphone packets and restarts the private audio server plus
+sensor stack if microphone input stops for 30 seconds.

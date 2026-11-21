@@ -21,6 +21,7 @@ from .position_view import PositionView,NAMES
 from .stock_panel import StockPanel
 from .story_graph import StoryGraph
 from .screen_video import ScreenCapture,VideoWriter
+from .microphone import MicrophoneMonitor,TOPIC as MICROPHONE_TOPIC
 
 class CloudView(QtWidgets.QWidget):
     def __init__(self,model):
@@ -98,6 +99,18 @@ class Dashboard(QtWidgets.QMainWindow):
         central=QtWidgets.QWidget();self.setCentralWidget(central);layout=QtWidgets.QVBoxLayout(central)
         self.status=QtWidgets.QLabel('接続待機');self.status.setWordWrap(True);layout.addWidget(self.status)
         self.toolbar=QtWidgets.QHBoxLayout();layout.addLayout(self.toolbar)
+        self.microphone=MicrophoneMonitor() if not interactive else None
+        if self.microphone:
+            self.mic_toggle=QtWidgets.QCheckBox('現地マイクを聞く');self.mic_toggle.setChecked(True)
+            self.microphone.enabled=True
+            self.mic_toggle.toggled.connect(lambda enabled:setattr(self.microphone,'enabled',enabled))
+            self.toolbar.addWidget(self.mic_toggle)
+            self.mic_volume=QtWidgets.QSlider(QtCore.Qt.Horizontal);self.mic_volume.setRange(0,100);self.mic_volume.setValue(50);self.mic_volume.setMaximumWidth(100)
+            self.mic_volume.setToolTip('マイクの試聴音量（録音音量は変わりません）')
+            self.mic_volume.valueChanged.connect(lambda value:setattr(self.microphone,'volume',value))
+            self.toolbar.addWidget(self.mic_volume)
+            self.mic_status=QtWidgets.QLabel('マイク接続待機');self.toolbar.addWidget(self.mic_status)
+            node.create_subscription(String,MICROPHONE_TOPIC,lambda m:self.microphone.receive(m.data,node.get_clock().now().nanoseconds/1e9),qos_profile_sensor_data)
         self.screen_status=QtWidgets.QLabel('画面録画：待受' if self.screen_capture else '');layout.addWidget(self.screen_status)
         if not interactive:
             for title,service in [('シナリオ開始（待受）','/geniac/scenario/start'),('音声停止','/geniac/scenario/stop'),
@@ -218,11 +231,13 @@ class Dashboard(QtWidgets.QMainWindow):
         if outline:text+='\n\nストーリーの流れ\n'+' → '.join(n.get('title','') for n in outline if n.get('narrative'))
         text+='\n\n進行：'+('模擬入力による統合テスト（実地の評価には含めません）' if self.interactive else 'センサー入力')
         if self.details.toPlainText()!=text:self.details.setPlainText(text)
+        if self.microphone:
+            self.mic_status.setText(('マイク受信中' if time.monotonic()-self.microphone.last_received<2 else 'マイク未受信')+('・'+self.microphone.error if self.microphone.error else ''))
         if self.screen_capture:
             self.screen_capture.update(scenario,self.model.fresh('scenario'),self.capture_frame)
             status='録画中' if self.screen_capture.active else ('保存中' if self.screen_capture.finishing else '待受')
             if self.screen_capture.error:status='エラー: '+self.screen_capture.error
-            self.screen_status.setText('画面録画：'+status+'（MP4・k5音声は公開時に合成）')
+            self.screen_status.setText('画面録画：'+status+'（MP4・現地マイク音声は公開時に合成）')
     def capture_frame(self):
         source=self.grab().toImage()
         frame=QtGui.QImage(VideoWriter.width,VideoWriter.height,QtGui.QImage.Format_RGB888)
@@ -232,6 +247,7 @@ class Dashboard(QtWidgets.QMainWindow):
         bits=frame.bits();bits.setsize(frame.byteCount());return bytes(bits)
     def closeEvent(self,event):
         self.timer.stop()
+        if self.microphone:self.microphone.close()
         if self.screen_capture:self.screen_capture.close()
         event.accept()
 
@@ -244,6 +260,7 @@ def main(args=None):
     try:app.exec_()
     finally:
         window.timer.stop()
+        if window.microphone:window.microphone.close()
         if window.screen_capture:window.screen_capture.close()
         node.destroy_node()
         if rclpy.ok():rclpy.shutdown()

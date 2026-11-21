@@ -54,6 +54,7 @@ def generate_launch_description():
                           'capture_audio':ParameterValue(LaunchConfiguration('capture_audio'),value_type=bool),
                           'auto_record':ParameterValue(LaunchConfiguration('auto_record'),value_type=bool)}]),
         Node(respawn=True,respawn_delay=3.,package='geniac_visualizer',executable='cloud_preview',output='screen',parameters=[sim]),
+        Node(respawn=True,respawn_delay=3.,package='geniac_visualizer',executable='microphone',output='screen'),
         Node(respawn=True,respawn_delay=3.,package='geniac_visualizer',executable='camera',name='geniac_camera',output='screen',
              condition=IfCondition(LaunchConfiguration('camera_enabled')),
              parameters=[sim,{'device':LaunchConfiguration('camera_device')}]),

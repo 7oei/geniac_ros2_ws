@@ -23,7 +23,7 @@ def audio_info(path):
 
 class PlaybackCapture:
     def __init__(self,root,source=None):
-        self.source=source
+        self.source=source or os.environ.get('GENIAC_RECORDING_AUDIO_SOURCE')
         self.root=Path(root)/'audio';self.process=None;self.log=None;self.output=None;self.episodes=set();self.error='';self.bag=''
     def start(self,bag):
         self.root.mkdir(parents=True,exist_ok=True);(self.root/'episodes').mkdir(exist_ok=True)
@@ -40,7 +40,7 @@ class PlaybackCapture:
     def bind(self,episode):
         if not EPISODE.fullmatch(episode) or episode in self.episodes:return
         self.episodes.add(episode)
-        atomic_json(self.root/'episodes'/(episode+'.json'),{'bag':self.bag,'state':'recording','file':self.output.name,'pid':self.process.pid if self.process else 0})
+        atomic_json(self.root/'episodes'/(episode+'.json'),{'bag':self.bag,'state':'recording','file':self.output.name,'pid':self.process.pid if self.process else 0,'source':self.source or 'playback_monitor'})
     def stop(self,bag_directory):
         try:
             if self.process and self.process.poll() is None:
@@ -48,7 +48,7 @@ class PlaybackCapture:
                 try:self.process.wait(timeout=10)
                 except subprocess.TimeoutExpired:self.process.kill();self.process.wait();raise RuntimeError('Audio stop timed out')
             info=audio_info(self.output)
-            state={'bag':self.bag,'state':'done','file':self.output.name,**info}
+            state={'bag':self.bag,'state':'done','file':self.output.name,'source':self.source or 'playback_monitor',**info}
             # Include the captured output as a sidecar in the same compressed ROSBAG archive.
             target=Path(bag_directory)/'scenario_audio.mka'
             if target.parent.is_dir() and not target.exists():os.link(self.output,target)
@@ -97,7 +97,7 @@ def mux_audio(root,data,video,output):
                     '-c:v','copy','-af',filters,'-c:a','aac','-b:a','192k',
                     '-t',str(float(data['duration'])),'-movflags','+faststart',str(output)],
                    check=True,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,timeout=300)
-    return output,'recorded_output'
+    return output,('recorded_microphone' if meta.get('source')=='geniac_microphone' else 'recorded_output')
 
 
 def prune_audio(root,bag):

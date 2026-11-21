@@ -11,7 +11,7 @@ def generate_launch_description():
         DeclareLaunchArgument('use_sim_time',default_value='false'),
         DeclareLaunchArgument('webrtc_enabled',default_value='false'),
         DeclareLaunchArgument('screen_record',default_value='true'),
-        Node(prefix=str(Path.home()/'geniac_ros2_ws/.venv-media/bin/python3'),respawn=True,respawn_delay=3.,package='geniac_visualizer',executable='dashboard',output='screen',parameters=[{
+        Node(sigterm_timeout='45',sigkill_timeout='10',prefix=str(Path.home()/'geniac_ros2_ws/.venv-media/bin/python3'),respawn=True,respawn_delay=3.,package='geniac_visualizer',executable='dashboard',output='screen',parameters=[{
             'cloud_topic':LaunchConfiguration('cloud_topic'),
             'webrtc_enabled':ParameterValue(LaunchConfiguration('webrtc_enabled'),value_type=bool),
             'screen_record':ParameterValue(LaunchConfiguration('screen_record'),value_type=bool),

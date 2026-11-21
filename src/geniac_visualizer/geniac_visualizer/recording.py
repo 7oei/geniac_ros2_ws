@@ -2,6 +2,7 @@
 from datetime import datetime, timezone
 from pathlib import Path
 import os
+import fcntl
 import signal
 import subprocess
 import uuid
@@ -15,7 +16,7 @@ TOPICS = ['/camera/audio/pcm','/livox/lidar','/livox/imu','/d435/camera/color/im
 class Recorder:
     def __init__(self,root,spawn=subprocess.Popen,send_signal=os.killpg,capture_audio=False):
         self.root=Path(root).expanduser().resolve();self.spawn=spawn;self.send_signal=send_signal
-        self.process=None;self.output=None;self.log=None;self.error=''
+        self.process=None;self.output=None;self.log=None;self.error='';self.recording_lock=None
         self.audio=PlaybackCapture(self.root) if capture_audio else None
 
     def running(self):
@@ -26,6 +27,9 @@ class Recorder:
         self.root.mkdir(parents=True,exist_ok=True)
         name=datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')+'_'+uuid.uuid4().hex[:8]
         self.output=self.root/name;self.error=''
+        (self.root/'.archive').mkdir(exist_ok=True)
+        self.recording_lock=(self.root/'.archive'/(name+'.recording.lock')).open('a')
+        fcntl.flock(self.recording_lock,fcntl.LOCK_EX)
         if self.audio:self.audio.start(name)
         if self.log:self.log.close()
         self.log=(self.root/(name+'.log')).open('w')
@@ -33,6 +37,7 @@ class Recorder:
             self.process=self.spawn(['ros2','bag','record','-o',str(self.output),*TOPICS],
                 stdin=subprocess.DEVNULL,stdout=self.log,stderr=subprocess.STDOUT,start_new_session=True)
         except OSError:
+            if self.recording_lock:self.recording_lock.close();self.recording_lock=None
             if self.audio:self.audio.stop(self.output)
             self.log.close();self.log=None;self.error='Failed to start ros2 bag';return False,self.error
         return True,str(self.output)
@@ -52,6 +57,11 @@ class Recorder:
         self.stop();return False,'Recording readiness timed out; audio has not started'
 
     def stop(self):
+        try:return self._stop()
+        finally:
+            if self.recording_lock:self.recording_lock.close();self.recording_lock=None
+
+    def _stop(self):
         if self.audio and self.audio.output:self.audio.stop(self.output)
         if not self.running():
             if self.log:self.log.close();self.log=None

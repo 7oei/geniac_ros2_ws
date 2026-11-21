@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import signal
 import socket
 import threading
 import time
@@ -117,8 +118,11 @@ async def run():
     from rclpy.qos import qos_profile_sensor_data
     from sensor_msgs.msg import CompressedImage,Image
     from std_msgs.msg import String
-    configure_local();rclpy.init();node=Node('geniac_webrtc_media')
+    from rclpy.signals import SignalHandlerOptions
+    configure_local();rclpy.init(signal_handler_options=SignalHandlerOptions.NO);node=Node('geniac_webrtc_media')
     loop=asyncio.get_running_loop()
+    stopping=asyncio.Event()
+    for sig in (signal.SIGINT,signal.SIGTERM):loop.add_signal_handler(sig,stopping.set)
     video_topic=os.environ.get('GENIAC_WEBRTC_VIDEO_TOPIC','auto')
     media=AutoMedia(loop) if video_topic=='auto' else Media(loop)
     peers=set();relay=MediaRelay();video=Video(media);audio=Audio(media)
@@ -131,7 +135,11 @@ async def run():
             subs.append(node.create_subscription(typ,topic,lambda m,f=cb:loop.call_soon_threadsafe(f,m),qos_profile_sensor_data))
     else:
         subs.append(node.create_subscription(CompressedImage if compressed else Image,video_topic,lambda m:loop.call_soon_threadsafe(callback,m),qos_profile_sensor_data))
-    thread=threading.Thread(target=lambda:rclpy.spin(node),daemon=True);thread.start()
+    def spin():
+        from rclpy.executors import ExternalShutdownException
+        try:rclpy.spin(node)
+        except ExternalShutdownException:pass
+    thread=threading.Thread(target=spin,daemon=True);thread.start()
     token=Path(os.environ.get('GENIAC_MEDIA_TOKEN_FILE',str(Path.home()/'geniac_ros2_ws/.media-token'))).read_text().strip()
     if len(token)<32:raise ValueError('Missing media authentication token')
     @web.middleware
@@ -168,14 +176,15 @@ async def run():
     runner=web.AppRunner(app);await runner.setup()
     await web.TCPSite(runner,os.environ.get('GENIAC_MEDIA_BIND','192.168.1.64'),8766).start();notify('READY=1')
     try:
-        while True:
+        while not stopping.is_set():
             notify('WATCHDOG=1')
             for pc in tuple(peers):
                 if isinstance(media,AutoMedia) and pc._camera_status is not None and pc._camera_status.readyState=='open':pc._camera_status.send(json.dumps(media.status()))
                 if pc.connectionState in ('failed','closed','disconnected') or (pc.connectionState!='connected' and time.monotonic()-pc._geniac_started>20):
                     await pc.close();peers.discard(pc)
-            await asyncio.sleep(5)
+            try:await asyncio.wait_for(stopping.wait(),5)
+            except asyncio.TimeoutError:pass
     finally:
-        await asyncio.gather(*(pc.close() for pc in peers));await audio.close();await runner.cleanup();rclpy.shutdown();thread.join(timeout=2)
+        await asyncio.gather(*(pc.close() for pc in tuple(peers)));await audio.close();await runner.cleanup();rclpy.shutdown();thread.join(timeout=2);node.destroy_node()
 
 def main():asyncio.run(run())

@@ -3,6 +3,8 @@ import argparse
 import fcntl
 import signal
 import threading
+import time
+from .recovery import recover_bags
 from pathlib import Path
 from .archive_queue import ArchiveQueue
 from .bag_archive import Archiver,read_env
@@ -30,9 +32,12 @@ def main():
             closed.wait(1)
     threads=[threading.Thread(target=server.serve_forever,daemon=True),threading.Thread(target=notifications,daemon=True)]
     for t in threads:t.start()
+    next_recovery=0.
     try:
         while not closed.is_set():
             try:
+                if time.monotonic()>=next_recovery:
+                    recover_bags(queue);next_recovery=time.monotonic()+60
                 config=read_env(args.env)
                 Archiver(args.root,config.get('GENIAC_ARCHIVE_BASE_URL',''),
                          limit=int(config.get('GENIAC_ARCHIVE_MAX_BYTES','100000000000')),

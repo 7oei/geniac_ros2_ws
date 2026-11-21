@@ -1,5 +1,6 @@
 """Nonblocking widget capture, monotonic 10 fps encoding, durable completed videos."""
 import json
+import fcntl
 import os
 import subprocess
 import threading
@@ -33,6 +34,11 @@ class VideoWriter:
         self.latest=first_frame;self.lock=threading.Lock();self.closed=threading.Event();self.error='';self.frames=0
         self.outcome='visualizer_closed';self.started=time.time();self.state=dict(state)
         self.sensor_started=(float(state['stamp'])+max(0,time.monotonic()-state['_received_mono'])) if 'stamp' in state and '_received_mono' in state else self.started
+        self.capture_lock=(self.root/(self.name+'.capture.lock')).open('a')
+        fcntl.flock(self.capture_lock,fcntl.LOCK_EX)
+        atomic_json(self.root/(self.name+'.capture.json'),{'id':self.name,'created':self.started,
+            'sensor_started':self.sensor_started,'episode':self.state.get('epoch','').split(':')[0],
+            'story':self.state.get('story',{})})
         self.thread=threading.Thread(target=self.run,daemon=True);self.thread.start()
     def offer(self,frame):
         if len(frame)!=self.width*self.height*3:raise ValueError('Unexpected video frame size')
@@ -70,6 +76,7 @@ class VideoWriter:
             if process and process.poll() is None:
                 process.kill();process.wait()
             atomic_json(self.root/(self.name+'.error.json'),{'error':self.error,'outcome':self.outcome})
+        finally:self.capture_lock.close()
 
 
 class ScreenCapture:

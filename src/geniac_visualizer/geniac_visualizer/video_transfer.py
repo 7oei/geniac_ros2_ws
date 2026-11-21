@@ -70,8 +70,11 @@ class Transfer:
     def command(self,args,timeout=3600):
         return self.run(args,check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout)
     def step(self):
+        if time.monotonic()>=getattr(self,"next_recovery",0):
+            from .recovery import recover_videos
+            recover_videos(self.root);self.next_recovery=time.monotonic()+60
         for path in sorted(self.root.glob('screen_*.json')):
-            if path.name.endswith(('.error.json','.upload.json')):continue
+            if path.name.endswith(('.error.json','.upload.json','.capture.json')):continue
             try:
                 data=json.loads(path.read_text())
                 if data.get('status')=='transferred' or data.get('retry_at',0)>time.time():continue
@@ -100,7 +103,7 @@ class Transfer:
         total=sum(p.stat().st_size for p in self.root.glob('screen_*.mp4') if p.is_file() and not p.is_symlink())
         entries=[]
         for p in self.root.glob('screen_*.json'):
-            if p.name.endswith(('.error.json','.upload.json')):continue
+            if p.name.endswith(('.error.json','.upload.json','.capture.json')):continue
             try:
                 d=json.loads(p.read_text())
                 if d.get('status')=='transferred' and ID.fullmatch(d['id']) and d.get('filename')==d['id']+'.mp4':entries.append((d['created'],p,d))

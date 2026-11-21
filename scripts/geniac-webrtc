@@ -1,0 +1,7 @@
+#!/bin/bash
+set -e
+GENIAC_WS=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+source /opt/ros/humble/setup.bash
+source "$GENIAC_WS/install/local_setup.bash"
+source "$GENIAC_WS/scripts/geniac-local-network.sh"
+exec "$GENIAC_WS/.venv-media/bin/python3" -c 'from geniac_visualizer.webrtc_server import main; main()'

@@ -5,5 +5,5 @@ source /opt/ros/humble/setup.bash
 source "$GENIAC_WS/install/local_setup.bash"
 export GENIAC_PEER_IP=${GENIAC_PEER_IP:-192.168.1.42}
 export GENIAC_INTERFACE=${GENIAC_INTERFACE:-wlp4s0}
-source "$GENIAC_WS/scripts/geniac-network.sh"
+source "$GENIAC_WS/scripts/geniac-local-network.sh"
 exec python3 "$GENIAC_WS/scripts/geniac-watchdog.py"

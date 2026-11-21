@@ -36,3 +36,5 @@ __pycache__/
 /artifacts/
 /test-results/
 /config/network/local/
+/.venv-media/
+/.media-token

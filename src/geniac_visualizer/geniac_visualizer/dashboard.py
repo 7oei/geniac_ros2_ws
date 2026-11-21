@@ -99,6 +99,8 @@ class Dashboard(QtWidgets.QMainWindow):
         central=QtWidgets.QWidget();self.setCentralWidget(central);layout=QtWidgets.QVBoxLayout(central)
         self.status=QtWidgets.QLabel('接続待機');self.status.setWordWrap(True);layout.addWidget(self.status)
         self.toolbar=QtWidgets.QHBoxLayout();layout.addLayout(self.toolbar)
+        self.webrtc=None
+        self.use_webrtc=node.declare_parameter('webrtc_enabled',False).value and not interactive
         self.microphone=MicrophoneMonitor() if not interactive else None
         if self.microphone:
             self.mic_toggle=QtWidgets.QCheckBox('現地マイクを聞く');self.mic_toggle.setChecked(True)
@@ -110,7 +112,8 @@ class Dashboard(QtWidgets.QMainWindow):
             self.mic_volume.valueChanged.connect(lambda value:setattr(self.microphone,'volume',value))
             self.toolbar.addWidget(self.mic_volume)
             self.mic_status=QtWidgets.QLabel('マイク接続待機');self.toolbar.addWidget(self.mic_status)
-            node.create_subscription(String,MICROPHONE_TOPIC,lambda m:self.microphone.receive(m.data,node.get_clock().now().nanoseconds/1e9),qos_profile_sensor_data)
+            if not self.use_webrtc:
+                node.create_subscription(String,MICROPHONE_TOPIC,lambda m:self.microphone.receive(m.data,node.get_clock().now().nanoseconds/1e9),qos_profile_sensor_data)
         self.screen_status=QtWidgets.QLabel('画面録画：待受' if self.screen_capture else '');layout.addWidget(self.screen_status)
         if not interactive:
             for title,service in [('シナリオ開始（待受）','/geniac/scenario/start'),('音声停止','/geniac/scenario/stop'),
@@ -148,8 +151,13 @@ class Dashboard(QtWidgets.QMainWindow):
         self.cloud_topic=node.declare_parameter('cloud_topic','/livox/lidar').value
         node.create_subscription(PointCloud2,self.cloud_topic,self.pointcloud,qos_profile_sensor_data)
         camera_topic=node.declare_parameter('camera_topic','/camera/image_raw').value
-        node.create_subscription(Image,camera_topic,self.camera.receive,qos_profile_sensor_data)
-        node.create_subscription(CompressedImage,camera_topic+'/compressed',self.camera.receive_compressed,qos_profile_sensor_data)
+        if self.use_webrtc:
+            from .webrtc_client import WebRTCClient
+            self.webrtc=WebRTCClient(node.declare_parameter('webrtc_url','http://192.168.1.64:8766').value,
+                node.declare_parameter('webrtc_token_file',str(Path.home()/'geniac_ros2_ws/.media-token')).value,self.microphone)
+        else:
+            node.create_subscription(Image,camera_topic,self.camera.receive,qos_profile_sensor_data)
+            node.create_subscription(CompressedImage,camera_topic+'/compressed',self.camera.receive_compressed,qos_profile_sensor_data)
         self.timer=QtCore.QTimer(self);self.timer.timeout.connect(self.tick);self.timer.start(50)
 
     def drain_ros(self):
@@ -195,6 +203,11 @@ class Dashboard(QtWidgets.QMainWindow):
         if scenario.get('reason')=='awaiting_behavior' and scenario.get('node') in self.graph.nodes:
             item=self.graph.nodes[scenario['node']];item.set_caption('行動の確定待ち（自動）')
     def tick(self):
+        if self.webrtc and self.webrtc.frame:
+            data,width,height,received=self.webrtc.frame
+            if received>self.camera.received:
+                self.camera.image=QtGui.QImage(data,width,height,width*3,QtGui.QImage.Format_RGB888).copy()
+                self.camera.received=received;self.camera.update()
         self.spin();self.stock_panel.show_status(getattr(self.model,'stock',{}),self.model.fresh('stock',timeout=5.));self.model.expire();self.cloud.update();self.camera.update();self.position.update();self.draw_tree()
         for service,future in list(self.futures):
             if future.done():
@@ -232,7 +245,7 @@ class Dashboard(QtWidgets.QMainWindow):
         text+='\n\n進行：'+('模擬入力による統合テスト（実地の評価には含めません）' if self.interactive else 'センサー入力')
         if self.details.toPlainText()!=text:self.details.setPlainText(text)
         if self.microphone:
-            self.mic_status.setText(('マイク受信中' if time.monotonic()-self.microphone.last_received<2 else 'マイク未受信')+('・'+self.microphone.error if self.microphone.error else ''))
+            self.mic_status.setText((self.webrtc.status+' / ' if self.webrtc else '')+('マイク受信中' if time.monotonic()-self.microphone.last_received<2 else 'マイク未受信')+('・'+self.microphone.error if self.microphone.error else ''))
         if self.screen_capture:
             self.screen_capture.update(scenario,self.model.fresh('scenario'),self.capture_frame)
             status='録画中' if self.screen_capture.active else ('保存中' if self.screen_capture.finishing else '待受')
@@ -247,6 +260,7 @@ class Dashboard(QtWidgets.QMainWindow):
         bits=frame.bits();bits.setsize(frame.byteCount());return bytes(bits)
     def closeEvent(self,event):
         self.timer.stop()
+        if self.webrtc:self.webrtc.close()
         if self.microphone:self.microphone.close()
         if self.screen_capture:self.screen_capture.close()
         event.accept()
@@ -260,6 +274,7 @@ def main(args=None):
     try:app.exec_()
     finally:
         window.timer.stop()
+        if window.webrtc:window.webrtc.close()
         if window.microphone:window.microphone.close()
         if window.screen_capture:window.screen_capture.close()
         node.destroy_node()

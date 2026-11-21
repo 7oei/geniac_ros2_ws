@@ -4,4 +4,4 @@ GENIAC_WS=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 source /opt/ros/humble/setup.bash
 source "$GENIAC_WS/install/local_setup.bash"
 source "$GENIAC_WS/scripts/geniac-network.sh"
-exec ros2 launch geniac_visualizer mother.launch.py "$@"
+exec ros2 launch geniac_visualizer mother.launch.py webrtc_enabled:=true "$@"

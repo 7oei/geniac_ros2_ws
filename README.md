@@ -453,3 +453,36 @@ time. The mother-local video remains silent until the k5 publication mux step.
 Existing recordings are not retroactively given microphone audio. The watchdog
 also monitors microphone packets and restarts the private audio server plus
 sensor stack if microphone input stops for 30 seconds.
+
+### WebRTC media / LAN isolation
+
+Production k5 HAP, sensor, watchdog, camera, microphone and ROSBAG use ROS domain
+106 with Cyclone DDS pinned to loopback (`geniac-local-network.sh`). They do not
+advertise or transmit camera/audio DDS on Wi-Fi or Ethernet. `geniac-lan-bridge`
+exports an explicit allowlist to LAN domain 105: tracks, markers, behavior,
+scenario state/tree/stock, recording status, TF and the reduced cloud preview.
+It proxies the four dashboard Trigger services back to k5. Neither `/camera/*`
+nor full `/livox/lidar` is exported. Full data remains in local ROSBAG.
+
+`geniac-webrtc.service` reads local camera JPEG and microphone PCM and serves
+H.264 video (target 1 Mbps, cap 1.5 Mbps) plus Opus audio over one WebRTC peer
+connection. No STUN/TURN or cloud relay is configured; this is LAN-only.
+Signaling listens on `192.168.1.64:8766` (override `GENIAC_MEDIA_BIND`) and requires
+a random bearer token in `.media-token`, shared with the mother (mode 0600,
+not committed). Signaling uses trusted-LAN HTTP; WebRTC media uses DTLS-SRTP.
+The server has a 30-second systemd event-loop watchdog. Client reconnects after
+failure. Native receiver feeds the existing camera widget and microphone monitor;
+it subscribes to no ROS camera/audio topics in production. Long exposure/frame
+accumulation still adds capture latency; media transport cannot remove that.
+
+Install on both hosts without modifying system Python:
+```
+python3 -m venv --without-pip --system-site-packages .venv-media
+python3 -m pip install --target .venv-media/lib/python3.10/site-packages -r scripts/media-requirements.txt
+```
+Install/enable k5 `geniac-lan-bridge.service` and `geniac-webrtc.service` alongside
+the updated sensor unit. Restart HAP/sensor/watchdog to change domains together.
+The production mother wrapper enables `webrtc_enabled`; offline ROS bag test GUIs
+can continue using the ROS image subscriptions with it disabled. Video recording
+still captures the rendered widget; its microphone soundtrack is recorded locally
+on k5 and muxed at publication, independent of WebRTC packet loss.

@@ -30,6 +30,14 @@ class Media:
         self.start=time.monotonic();self.video_received=0.;self.audio_received=0.
     def video(self,msg):
         self.image=bytes(msg.data);self.video_received=time.monotonic();self.image_event.set()
+    def raw_video(self,msg):
+        channels={'mono8':1,'rgb8':3,'bgr8':3}.get(msg.encoding)
+        if not channels or msg.width<=0 or msg.height<=0 or msg.step<msg.width*channels or len(msg.data)!=msg.step*msg.height:return
+        rows=np.frombuffer(msg.data,np.uint8).reshape(msg.height,msg.step)[:,:msg.width*channels]
+        image=rows.reshape(msg.height,msg.width,channels)
+        if channels==1:image=cv2.cvtColor(image,cv2.COLOR_GRAY2BGR)
+        elif msg.encoding=='rgb8':image=cv2.cvtColor(image,cv2.COLOR_RGB2BGR)
+        self.image=image.copy();self.video_received=time.monotonic();self.image_event.set()
     def sound(self,msg):
         try:
             d=json.loads(msg.data)
@@ -45,7 +53,7 @@ class Video(MediaStreamTrack):
     def __init__(self,media):super().__init__();self.media=media
     async def recv(self):
         await self.media.image_event.wait();self.media.image_event.clear()
-        image=cv2.imdecode(np.frombuffer(self.media.image,np.uint8),cv2.IMREAD_COLOR)
+        image=self.media.image if isinstance(self.media.image,np.ndarray) else cv2.imdecode(np.frombuffer(self.media.image,np.uint8),cv2.IMREAD_COLOR)
         frame=av.VideoFrame.from_ndarray(image,format='bgr24')
         frame.pts=int((time.monotonic()-self.media.start)*90000);frame.time_base=Fraction(1,90000)
         return frame
@@ -81,11 +89,14 @@ async def run():
     import rclpy
     from rclpy.node import Node
     from rclpy.qos import qos_profile_sensor_data
-    from sensor_msgs.msg import CompressedImage
+    from sensor_msgs.msg import CompressedImage,Image
     from std_msgs.msg import String
     configure_local();rclpy.init();node=Node('geniac_webrtc_media')
     loop=asyncio.get_running_loop();media=Media(loop);peers=set();relay=MediaRelay();video=Video(media);audio=Audio(media)
-    subs=[node.create_subscription(CompressedImage,'/camera/image_raw/compressed',lambda m:loop.call_soon_threadsafe(media.video,m),qos_profile_sensor_data),
+    video_topic=os.environ.get('GENIAC_WEBRTC_VIDEO_TOPIC','/camera/image_raw/compressed')
+    compressed=video_topic.endswith('/compressed')
+    callback=media.video if compressed else media.raw_video
+    subs=[node.create_subscription(CompressedImage if compressed else Image,video_topic,lambda m:loop.call_soon_threadsafe(callback,m),qos_profile_sensor_data),
           node.create_subscription(String,'/camera/audio/pcm',lambda m:loop.call_soon_threadsafe(media.sound,m),qos_profile_sensor_data)]
     thread=threading.Thread(target=lambda:rclpy.spin(node),daemon=True);thread.start()
     token=Path(os.environ.get('GENIAC_MEDIA_TOKEN_FILE',str(Path.home()/'geniac_ros2_ws/.media-token'))).read_text().strip()
@@ -115,7 +126,7 @@ async def run():
             await pc.close();peers.discard(pc);raise
     async def health(request):
         now=time.monotonic()
-        return web.json_response({'viewers':len(peers),'video_age':now-media.video_received,'audio_age':now-media.audio_received})
+        return web.json_response({'video_topic':video_topic,'viewers':len(peers),'video_age':now-media.video_received,'audio_age':now-media.audio_received})
     app=web.Application(middlewares=[auth],client_max_size=65536);app.router.add_post('/offer',offer);app.router.add_get('/health',health)
     runner=web.AppRunner(app);await runner.setup()
     await web.TCPSite(runner,os.environ.get('GENIAC_MEDIA_BIND','192.168.1.64'),8766).start();notify('READY=1')

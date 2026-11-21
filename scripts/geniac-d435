@@ -12,6 +12,6 @@ fi
 source "$GENIAC_WS/scripts/geniac-local-network.sh"
 exec ros2 launch realsense2_camera rs_launch.py \
   camera_namespace:=d435 camera_name:=camera \
-  enable_color:=true enable_depth:=true enable_infra1:=false enable_infra2:=false \
-  rgb_camera.color_profile:=640x480x15 depth_module.depth_profile:=640x480x15 \
+  enable_color:=true enable_depth:=true enable_infra1:=true enable_infra2:=false \
+  rgb_camera.color_profile:=640x480x15 depth_module.depth_profile:=640x480x15 depth_module.infra_profile:=640x480x15 \
   pointcloud.enable:=false align_depth.enable:=false "$@"

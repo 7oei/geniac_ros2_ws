@@ -512,3 +512,12 @@ source ~/geniac_ros2_ws/scripts/geniac-local-network.sh
 python3 ~/geniac_ros2_ws/scripts/check_d435.py
 ```
 The package sources are the [official ROS RealSense distribution](https://github.com/realsenseai/realsense-ros).
+
+D435 left infrared (`enable_infra1=true`, 640x480 / 15 fps) is now available at
+`/d435/camera/infra1/image_rect_raw`. Install `scripts/deploy/geniac-webrtc-ir.conf`
+as `~/.config/systemd/user/geniac-webrtc.service.d/video.conf` to display this
+monochrome IR stream in the existing WebRTC camera panel. Restart D435 and WebRTC
+after switching. The camera microphone remains the existing USB microphone.
+The video topic can also select raw RGB/BGR images or a JPEG `/compressed` topic;
+all source topics remain loopback-only. Removing the drop-in and restarting
+WebRTC restores the original USB-camera image.

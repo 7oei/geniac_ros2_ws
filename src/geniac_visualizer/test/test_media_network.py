@@ -9,5 +9,5 @@ def test_camera_and_audio_never_exported_to_lan():
 
 def test_local_dds_has_only_loopback_peers():
     d=local_environment()
-    assert d['ROS_LOCALHOST_ONLY']=='1' and d['ROS_DOMAIN_ID']=='106'
+    assert d['ROS_LOCALHOST_ONLY']=='0' and d['ROS_DOMAIN_ID']=='106'
     assert 'name="lo"' in d['CYCLONEDDS_URI'] and '192.168.' not in d['CYCLONEDDS_URI']

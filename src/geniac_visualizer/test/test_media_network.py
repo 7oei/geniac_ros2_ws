@@ -4,7 +4,7 @@ from geniac_visualizer.lan_bridge import FORWARDED,SERVICES
 def test_camera_and_audio_never_exported_to_lan():
     assert not any(x.startswith('/camera/') for x in FORWARDED)
     assert '/livox/lidar' not in FORWARDED
-    assert '/geniac/visualization/cloud' in FORWARDED
+    assert '/geniac/visualization/cloud' not in FORWARDED
     assert '/geniac/recording/stop' in SERVICES
 
 def test_local_dds_has_only_loopback_peers():

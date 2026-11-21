@@ -116,7 +116,7 @@ async def run():
     import rclpy
     from rclpy.node import Node
     from rclpy.qos import qos_profile_sensor_data
-    from sensor_msgs.msg import CompressedImage,Image
+    from sensor_msgs.msg import CompressedImage,Image,PointCloud2
     from std_msgs.msg import String
     from rclpy.signals import SignalHandlerOptions
     configure_local();rclpy.init(signal_handler_options=SignalHandlerOptions.NO);node=Node('geniac_webrtc_media')
@@ -126,9 +126,16 @@ async def run():
     video_topic=os.environ.get('GENIAC_WEBRTC_VIDEO_TOPIC','auto')
     media=AutoMedia(loop) if video_topic=='auto' else Media(loop)
     peers=set();relay=MediaRelay();video=Video(media);audio=Audio(media)
+    from .lidar_video import LidarRenderer
+    lidar_media=Media(loop);lidar_video=Video(lidar_media)
+    def deliver(image):
+        lidar_media.image=image;lidar_media.video_received=time.monotonic();lidar_media.image_event.set()
+    renderer=LidarRenderer(lambda image:loop.call_soon_threadsafe(deliver,image))
     compressed=video_topic.endswith('/compressed')
     callback=media.video if compressed else media.raw_video
     subs=[node.create_subscription(String,'/camera/audio/pcm',lambda m:loop.call_soon_threadsafe(media.sound,m),qos_profile_sensor_data)]
+    subs.append(node.create_subscription(PointCloud2,'/livox/lidar',renderer.cloud,qos_profile_sensor_data))
+    subs.append(node.create_subscription(String,'/geniac_detector/tracks',renderer.tracking,qos_profile_sensor_data))
     if video_topic=='auto':
         for typ,topic,cb in [(CompressedImage,'/d435/camera/color/image_raw/compressed',media.rgb),
                              (Image,'/d435/camera/infra1/image_rect_raw',media.ir)]:
@@ -147,7 +154,7 @@ async def run():
         if not secrets.compare_digest(request.headers.get('Authorization',''),'Bearer '+token):raise web.HTTPUnauthorized()
         return await handler(request)
     async def offer(request):
-        if len(peers)>=3:raise web.HTTPServiceUnavailable(text='Too many viewers')
+        if len(peers)>=6:raise web.HTTPServiceUnavailable(text='Too many viewers')
         data=await request.json()
         pc=RTCPeerConnection(RTCConfiguration(iceServers=[]));peers.add(pc);pc._geniac_started=time.monotonic()
         pc._camera_status=None
@@ -160,7 +167,9 @@ async def run():
                 await pc.close();peers.discard(pc)
         try:
             await pc.setRemoteDescription(RTCSessionDescription(sdp=data['sdp'],type=data['type']))
-            pc.addTrack(relay.subscribe(video,buffered=False));pc.addTrack(relay.subscribe(audio,buffered=False))
+            if request.path=='/lidar/offer':pc.addTrack(relay.subscribe(lidar_video,buffered=False))
+            else:
+                pc.addTrack(relay.subscribe(video,buffered=False));pc.addTrack(relay.subscribe(audio,buffered=False))
             for t in pc.getTransceivers():
                 if t.kind=='video':
                     codecs=[c for c in RTCRtpSender.getCapabilities('video').codecs if c.mimeType=='video/H264']
@@ -171,8 +180,8 @@ async def run():
             await pc.close();peers.discard(pc);raise
     async def health(request):
         now=time.monotonic()
-        return web.json_response({**(media.status() if isinstance(media,AutoMedia) else {}),'video_topic':video_topic,'viewers':len(peers),'video_age':now-media.video_received,'audio_age':now-media.audio_received})
-    app=web.Application(middlewares=[auth],client_max_size=65536);app.router.add_post('/offer',offer);app.router.add_get('/health',health)
+        return web.json_response({**(media.status() if isinstance(media,AutoMedia) else {}),'lidar':renderer.stats,'video_topic':video_topic,'viewers':len(peers),'video_age':now-media.video_received,'audio_age':now-media.audio_received})
+    app=web.Application(middlewares=[auth],client_max_size=65536);app.router.add_post('/offer',offer);app.router.add_post('/lidar/offer',offer);app.router.add_get('/health',health)
     runner=web.AppRunner(app);await runner.setup()
     await web.TCPSite(runner,os.environ.get('GENIAC_MEDIA_BIND','192.168.1.64'),8766).start();notify('READY=1')
     try:
@@ -185,6 +194,7 @@ async def run():
             try:await asyncio.wait_for(stopping.wait(),5)
             except asyncio.TimeoutError:pass
     finally:
+        renderer.close()
         await asyncio.gather(*(pc.close() for pc in tuple(peers)));await audio.close();await runner.cleanup();rclpy.shutdown();thread.join(timeout=2);node.destroy_node()
 
 def main():asyncio.run(run())

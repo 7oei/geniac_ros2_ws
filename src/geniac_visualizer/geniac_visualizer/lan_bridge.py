@@ -16,7 +16,7 @@ from .local_network import configure_local,LOCAL_DOMAIN
 FORWARDED={'/geniac_detector/tracks':String,'/geniac_detector/markers':MarkerArray,
  '/geniac/behavior':String,'/geniac/scenario/state':String,'/geniac/scenario/tree':String,
  '/geniac/scenario/stock':String,'/geniac/recording/status':String,
- '/geniac/visualization/cloud':PointCloud2,'/tf':TFMessage,'/tf_static':TFMessage}
+ '/tf':TFMessage,'/tf_static':TFMessage}
 SERVICES=['/geniac/scenario/start','/geniac/scenario/stop','/geniac/recording/start','/geniac/recording/stop']
 
 def main():

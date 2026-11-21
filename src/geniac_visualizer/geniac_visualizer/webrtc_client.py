@@ -10,7 +10,7 @@ import aiohttp
 from aiortc import RTCPeerConnection,RTCSessionDescription,RTCConfiguration
 
 class WebRTCClient:
-    def __init__(self,url,token_file,monitor):
+    def __init__(self,url,token_file,monitor=None):
         self.url=url.rstrip('/');self.token=Path(token_file).read_text().strip();self.monitor=monitor
         self.closed=threading.Event();self.frame=None;self.status='WebRTC接続待機';self.video_frames=0;self.audio_frames=0
         self.source_label=''
@@ -44,7 +44,8 @@ class WebRTCClient:
             def track(t):
                 task=asyncio.create_task(receive(t));tasks.add(task)
             try:
-                pc.addTransceiver('video',direction='recvonly');pc.addTransceiver('audio',direction='recvonly')
+                pc.addTransceiver('video',direction='recvonly')
+                if self.monitor is not None:pc.addTransceiver('audio',direction='recvonly')
                 await pc.setLocalDescription(await pc.createOffer())
                 async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
                     async with session.post(self.url+'/offer',headers={'Authorization':'Bearer '+self.token},json={'sdp':pc.localDescription.sdp,'type':pc.localDescription.type}) as reply:

@@ -1,5 +1,6 @@
 """Mother-PC desktop dashboard. ROS services execute recording on the sensor host."""
 import json
+from collections import deque
 import signal
 import math
 from pathlib import Path
@@ -26,13 +27,18 @@ from .microphone import MicrophoneMonitor,TOPIC as MICROPHONE_TOPIC
 class CloudView(QtWidgets.QWidget):
     def __init__(self,model):
         super().__init__();self.model=model;self.setMinimumSize(480,360)
+        self.frames=deque(maxlen=10)
+
+    def add_frame(self,points):
+        now=time.monotonic()
+        self.frames.append((now,np.asarray(points).copy()))
     def paintEvent(self,event):
         p=QtGui.QPainter(self);p.fillRect(self.rect(),QtGui.QColor('#111c27'))
         p.setRenderHint(QtGui.QPainter.Antialiasing)
         if not self.model.fresh('cloud'):
             p.setPen(QtGui.QColor('#94a3b8'));p.drawText(self.rect(),QtCore.Qt.AlignCenter,'点群未接続');p.end();return
         # Pinhole view at the LiDAR origin: x forward, y left, z up.
-        focal=self.width()/(2*math.tan(math.radians(60)))
+        focal=1.5*self.width()/(2*math.tan(math.radians(60)))
         def project(point):
             x,y,z=map(float,point[:3])
             if not all(math.isfinite(v) for v in (x,y,z)) or x<=.2:return None
@@ -41,13 +47,20 @@ class CloudView(QtWidgets.QWidget):
         p.drawLine(0,self.height()//2,self.width(),self.height()//2)
         p.drawLine(self.width()//2-5,self.height()//2,self.width()//2+5,self.height()//2)
         # Draw distant points first so nearby objects remain visible.
-        cloud=np.asarray(self.model.cloud)
-        for row in sorted(cloud,key=lambda v:float(v[0]) if math.isfinite(v[0]) else -1,reverse=True):
-            at=project(row)
-            if at is None or not self.rect().contains(at.toPoint()):continue
-            distance=float(np.linalg.norm(row[:3]))
-            color=QtGui.QColor.fromHsvF(min(distance/45.,1.)*.65,.65,1.)
-            p.setPen(QtGui.QPen(color,2));p.drawPoint(at)
+        # Bound persistence across interruptions; old frames fade behind the newest.
+        now=time.monotonic()
+        while self.frames and now-self.frames[0][0]>1.:self.frames.popleft()
+        frames=list(self.frames)
+        if not frames:frames=[(now,np.asarray(self.model.cloud))]
+        for index,(_,cloud) in enumerate(frames):
+            alpha=0.2+0.8*(index+1)/len(frames)
+            for row in sorted(cloud,key=lambda v:float(v[0]) if math.isfinite(v[0]) else -1,reverse=True):
+                at=project(row)
+                if at is None or not self.rect().contains(at.toPoint()):continue
+                distance=float(np.linalg.norm(row[:3]))
+                color=QtGui.QColor.fromHsvF(min(distance/45.,1.)*.65,.65,1.)
+                color.setAlphaF(alpha)
+                p.setPen(QtGui.QPen(color,2));p.drawPoint(at)
         labels={t['id'].split(':')[-1]:t.get('label','') for t in self.model.behavior.get('targets',[])}
         for t in self.model.tracks:
             at=project(t['center'])
@@ -62,7 +75,7 @@ class CloudView(QtWidgets.QWidget):
                             p.drawLine(corners[mask],corners[other])
             else:p.drawEllipse(at,7,7)
             p.drawText(at+QtCore.QPointF(10,-5),f"ID {t['track_id']}  {t['score']:.2f}  {labels.get(str(t['track_id']), '')}")
-        p.setPen(QtGui.QColor('white'));p.drawText(12,22,'LiDAR主観・前方視点（水平120°／色：近=赤、遠=青）')
+        p.setPen(QtGui.QColor('white'));p.drawText(12,22,'LiDAR主観・前方視点（1.5倍拡大・直近10フレーム／色：近=赤、遠=青）')
         if not self.model.fresh('tracks'):p.drawText(12,45,'検知結果待機 / 通信途絶')
         p.end()
 
@@ -85,7 +98,7 @@ class CameraView(QtWidgets.QWidget):
         if self.image is not None and time.monotonic()-self.received<2:
             image=self.image.scaled(self.size(),QtCore.Qt.KeepAspectRatio,QtCore.Qt.SmoothTransformation)
             p.drawImage((self.width()-image.width())//2,(self.height()-image.height())//2,image)
-        else:p.setPen(QtGui.QColor('#94a3b8'));p.drawText(self.rect(),QtCore.Qt.AlignCenter,'カメラ未接続')
+        else:p.setPen(QtGui.QColor('#94a3b8'));p.drawText(self.rect(),QtCore.Qt.AlignCenter,getattr(self,'waiting_text','カメラ未接続'))
         p.end()
 
 
@@ -104,7 +117,7 @@ class Dashboard(QtWidgets.QMainWindow):
         self.toolbar=QtWidgets.QGridLayout();layout.addLayout(self.toolbar)
         def add_control(widget):
             index=self.toolbar.count();self.toolbar.addWidget(widget,index//3,index%3)
-        self.webrtc=None
+        self.webrtc=None;self.lidar_webrtc=None
         self.use_webrtc=node.declare_parameter('webrtc_enabled',False).value and not interactive
         self.microphone=MicrophoneMonitor() if not interactive else None
         if self.microphone:
@@ -122,10 +135,11 @@ class Dashboard(QtWidgets.QMainWindow):
         self.screen_status=QtWidgets.QLabel('画面録画：待受' if self.screen_capture else '');layout.addWidget(self.screen_status)
         self.result=QtWidgets.QLabel('' if not interactive else 'テスト開始後、鹿をドラッグしてください。放すと固定。破線の外に出して5秒で完全退避。');self.result.setWordWrap(True);layout.addWidget(self.result)
         if not interactive:self.result.hide()
-        self.stock_panel=StockPanel();layout.addWidget(self.stock_panel)
+        self.stock_panel=StockPanel()
         left=QtWidgets.QSplitter(QtCore.Qt.Vertical);layout.addWidget(left,1)
         self.media=QtWidgets.QGroupBox('カメラ');media_layout=QtWidgets.QVBoxLayout(self.media)
-        self.camera=CameraView();self.cloud=CloudView(self.model);self.cloud.setMinimumSize(320,150)
+        self.camera=CameraView();self.cloud=CameraView() if self.use_webrtc else CloudView(self.model);self.cloud.setMinimumSize(320,150)
+        if self.use_webrtc:self.cloud.waiting_text='点群映像未接続'
         media_layout.addWidget(self.camera)
         right=QtWidgets.QSplitter(QtCore.Qt.Vertical);columns.addWidget(right)
         cloud_panel=QtWidgets.QGroupBox('LiDAR点群');cloud_layout=QtWidgets.QVBoxLayout(cloud_panel)
@@ -135,8 +149,11 @@ class Dashboard(QtWidgets.QMainWindow):
         graph_panel=QtWidgets.QGroupBox('現在のシナリオツリー');self.graph_panel=graph_panel;gl=QtWidgets.QVBoxLayout(graph_panel)
         self.graph=StoryGraph();self.scene=self.graph.scene()
         gl.addWidget(self.graph);right.addWidget(graph_panel)
+        story_area=QtWidgets.QWidget();story_layout=QtWidgets.QVBoxLayout(story_area);story_layout.setContentsMargins(0,0,0,0)
+        story_layout.addWidget(self.stock_panel)
         text_panel=QtWidgets.QGroupBox('ストーリー・前回からの改善');tl=QtWidgets.QVBoxLayout(text_panel)
-        self.details=QtWidgets.QPlainTextEdit();self.details.setReadOnly(True);tl.addWidget(self.details);left.addWidget(text_panel)
+        story_layout.addWidget(text_panel,1)
+        self.details=QtWidgets.QPlainTextEdit();self.details.setReadOnly(True);tl.addWidget(self.details);left.addWidget(story_area)
         columns.setSizes([480,980]);left.setSizes([320,280,200])
         right.setSizes([250,630]);right.setStretchFactor(0,1);right.setStretchFactor(1,3)
         columns.setStretchFactor(0,1);columns.setStretchFactor(1,2)
@@ -147,12 +164,13 @@ class Dashboard(QtWidgets.QMainWindow):
                 ('/geniac/scenario/stock','stock',qos),('/geniac/scenario/state','scenario',qos),('/geniac/scenario/tree','tree',qos),('/geniac/recording/status','recording',10)]:
             node.create_subscription(String,topic,lambda m,k=kind:self.packet(k,m),quality)
         self.cloud_topic=node.declare_parameter('cloud_topic','/livox/lidar').value
-        node.create_subscription(PointCloud2,self.cloud_topic,self.pointcloud,qos_profile_sensor_data)
+        if not self.use_webrtc:node.create_subscription(PointCloud2,self.cloud_topic,self.pointcloud,qos_profile_sensor_data)
         camera_topic=node.declare_parameter('camera_topic','/camera/image_raw').value
         if self.use_webrtc:
             from .webrtc_client import WebRTCClient
             self.webrtc=WebRTCClient(node.declare_parameter('webrtc_url','http://192.168.1.64:8766').value,
                 node.declare_parameter('webrtc_token_file',str(Path.home()/'geniac_ros2_ws/.media-token')).value,self.microphone)
+            self.lidar_webrtc=WebRTCClient(self.webrtc.url+'/lidar',node.get_parameter('webrtc_token_file').value)
         else:
             node.create_subscription(Image,camera_topic,self.camera.receive,qos_profile_sensor_data)
             node.create_subscription(CompressedImage,camera_topic+'/compressed',self.camera.receive_compressed,qos_profile_sensor_data)
@@ -175,7 +193,8 @@ class Dashboard(QtWidgets.QMainWindow):
     def pointcloud(self,msg):
         if msg.header.frame_id!='livox_frame':self.result.setText('点群のframe_idがlivox_frameと異なります');return
         try:
-            points=decode_cloud(msg,200000);self.model.update('cloud',points[::max(1,len(points)//5000)])
+            points=decode_cloud(msg,200000);points=points[::max(1,len(points)//5000)]
+            self.model.update('cloud',points);self.cloud.add_frame(points)
         except (ValueError,TypeError):self.result.setText('点群形式を読み取れません')
     def call(self,service):
         c=self.clients[service]
@@ -203,6 +222,11 @@ class Dashboard(QtWidgets.QMainWindow):
         if scenario.get('reason')=='awaiting_behavior' and scenario.get('node') in self.graph.nodes:
             item=self.graph.nodes[scenario['node']];item.set_caption('行動の確定待ち（自動）')
     def tick(self):
+        if self.lidar_webrtc and self.lidar_webrtc.frame:
+            data,width,height,received=self.lidar_webrtc.frame
+            if received>self.cloud.received:
+                self.cloud.image=QtGui.QImage(data,width,height,width*3,QtGui.QImage.Format_RGB888).copy()
+                self.cloud.received=received;self.cloud.update()
         if self.webrtc and self.webrtc.frame:
             data,width,height,received=self.webrtc.frame
             if received>self.camera.received:
@@ -260,6 +284,7 @@ class Dashboard(QtWidgets.QMainWindow):
         bits=frame.bits();bits.setsize(frame.byteCount());return bytes(bits)
     def closeEvent(self,event):
         self.timer.stop()
+        if self.lidar_webrtc:self.lidar_webrtc.close()
         if self.webrtc:self.webrtc.close()
         if self.microphone:self.microphone.close()
         if self.screen_capture:self.screen_capture.close()
@@ -274,6 +299,7 @@ def main(args=None):
     try:app.exec_()
     finally:
         window.timer.stop()
+        if window.lidar_webrtc:window.lidar_webrtc.close()
         if window.webrtc:window.webrtc.close()
         if window.microphone:window.microphone.close()
         if window.screen_capture:window.screen_capture.close()

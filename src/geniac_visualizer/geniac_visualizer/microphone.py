@@ -89,7 +89,7 @@ def main(args=None):
             p=None
             try:
                 p=subprocess.Popen(['ffmpeg','-v','error','-nostdin','-f','pulse','-sample_rate','48000','-channels','2',
-                    '-analyzeduration','0','-probesize','32','-i',source,'-ac','1','-ar',str(RATE),'-f','s16le','pipe:1'],
+                    '-analyzeduration','0','-probesize','32','-i',source,'-ac','1','-ar',str(RATE),'-f','s16le','-flush_packets','1','pipe:1'],
                     stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
                 holder[:]=[p]
                 while not closed.is_set():

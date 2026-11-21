@@ -52,13 +52,28 @@ class Video(MediaStreamTrack):
 
 class Audio(MediaStreamTrack):
     kind='audio'
-    def __init__(self,media):super().__init__();self.media=media;self.pts=None
+    def __init__(self,media):super().__init__();self.media=media;self.pts=None;self.process=None;self.deadline=None
     async def recv(self):
-        pcm=await self.media.audio.get()
+        if self.process is None or self.process.returncode is not None:
+            env=dict(os.environ,PULSE_SERVER='unix:/run/user/'+str(os.getuid())+'/geniac-scenario-audio/native')
+            self.process=await asyncio.create_subprocess_exec('ffmpeg','-v','error','-nostdin','-f','pulse',
+                '-fragment_size','3840','-sample_rate','48000','-channels','2','-analyzeduration','0','-probesize','32',
+                '-i','geniac_microphone','-ac','1','-ar','48000','-f','s16le','-flush_packets','1','pipe:1',
+                stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.DEVNULL,env=env)
+        pcm=await self.process.stdout.readexactly(1920)
+        now=time.monotonic()
+        if self.deadline is None or now-self.deadline>.1:self.deadline=now
+        await asyncio.sleep(max(0,self.deadline-now));self.deadline+=.02
         frame=av.AudioFrame.from_ndarray(np.frombuffer(pcm,np.int16).reshape(1,-1),format='s16',layout='mono')
-        if self.pts is None:self.pts=int((time.monotonic()-self.media.start)*16000)
-        frame.sample_rate=16000;frame.time_base=Fraction(1,16000);frame.pts=self.pts;self.pts+=frame.samples
+        if self.pts is None:self.pts=int((time.monotonic()-self.media.start)*48000)
+        frame.sample_rate=48000;frame.time_base=Fraction(1,48000);frame.pts=self.pts;self.pts+=frame.samples
         return frame
+    async def close(self):
+        if self.process and self.process.returncode is None:
+            self.process.terminate()
+            try:await asyncio.wait_for(self.process.wait(),2)
+            except asyncio.TimeoutError:self.process.kill();await self.process.wait()
+
 
 async def run():
     from aiortc.codecs import h264
@@ -112,6 +127,6 @@ async def run():
                     await pc.close();peers.discard(pc)
             await asyncio.sleep(5)
     finally:
-        await asyncio.gather(*(pc.close() for pc in peers));await runner.cleanup();rclpy.shutdown();thread.join(timeout=2)
+        await asyncio.gather(*(pc.close() for pc in peers));await audio.close();await runner.cleanup();rclpy.shutdown();thread.join(timeout=2)
 
 def main():asyncio.run(run())

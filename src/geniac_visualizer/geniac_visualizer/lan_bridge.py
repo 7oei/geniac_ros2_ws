@@ -42,8 +42,9 @@ def main():
         services.append(public.create_service(Trigger,name,forward))
     local_executor=SingleThreadedExecutor(context=local_context);local_executor.add_node(local)
     thread=threading.Thread(target=local_executor.spin,daemon=True);thread.start()
-    try:rclpy.spin(public)
+    public_executor=SingleThreadedExecutor(context=public_context);public_executor.add_node(public)
+    try:public_executor.spin()
     finally:
-        local_executor.shutdown();thread.join(timeout=2);local.destroy_node();public.destroy_node()
+        public_executor.shutdown();local_executor.shutdown();thread.join(timeout=2);local.destroy_node();public.destroy_node()
         for ctx in (local_context,public_context):
             if ctx.ok():rclpy.shutdown(context=ctx)

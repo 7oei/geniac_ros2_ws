@@ -464,7 +464,8 @@ scenario state/tree/stock, recording status, TF and the reduced cloud preview.
 It proxies the four dashboard Trigger services back to k5. Neither `/camera/*`
 nor full `/livox/lidar` is exported. Full data remains in local ROSBAG.
 
-`geniac-webrtc.service` reads local camera JPEG and microphone PCM and serves
+`geniac-webrtc.service` reads local camera JPEG and the shared PulseAudio
+microphone source directly, and serves
 H.264 video (target 1 Mbps, cap 1.5 Mbps) plus Opus audio over one WebRTC peer
 connection. No STUN/TURN or cloud relay is configured; this is LAN-only.
 Signaling listens on `192.168.1.64:8766` (override `GENIAC_MEDIA_BIND`) and requires

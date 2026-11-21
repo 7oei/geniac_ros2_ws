@@ -39,6 +39,7 @@ class WebRTCClient:
                 def message(text):
                     try:self.source_label={'usb':'USBカメラ','ir':'D435 左IR','unavailable':'映像待機'}.get(json.loads(text).get('source'),'')
                     except (ValueError,TypeError):pass
+            channel(pc.createDataChannel('camera_status'))
             @pc.on('track')
             def track(t):
                 task=asyncio.create_task(receive(t));tasks.add(task)

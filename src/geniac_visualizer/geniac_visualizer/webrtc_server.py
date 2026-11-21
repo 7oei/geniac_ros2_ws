@@ -145,7 +145,10 @@ async def run():
         if len(peers)>=3:raise web.HTTPServiceUnavailable(text='Too many viewers')
         data=await request.json()
         pc=RTCPeerConnection(RTCConfiguration(iceServers=[]));peers.add(pc);pc._geniac_started=time.monotonic()
-        pc._camera_status=pc.createDataChannel('camera_status')
+        pc._camera_status=None
+        @pc.on('datachannel')
+        def datachannel(channel):
+            if channel.label=='camera_status':pc._camera_status=channel
         @pc.on('connectionstatechange')
         async def state():
             if pc.connectionState in ('failed','closed'):
@@ -171,7 +174,7 @@ async def run():
         while True:
             notify('WATCHDOG=1')
             for pc in tuple(peers):
-                if isinstance(media,AutoMedia) and pc._camera_status.readyState=='open':pc._camera_status.send(json.dumps(media.status()))
+                if isinstance(media,AutoMedia) and pc._camera_status is not None and pc._camera_status.readyState=='open':pc._camera_status.send(json.dumps(media.status()))
                 if pc.connectionState in ('failed','closed','disconnected') or (pc.connectionState!='connected' and time.monotonic()-pc._geniac_started>20):
                     await pc.close();peers.discard(pc)
             await asyncio.sleep(5)

@@ -412,3 +412,24 @@ published immediately. Motion produces trails and sensor noise also accumulates.
 Exposure feedback uses the original image; published JPEG/raw images (including
 those recorded in bags) use the summed image. History resets on reconnect,
 when exposure drops below its maximum, or when a single frame is bright enough.
+
+### Unattended recovery
+
+Scenario pauses retry automatically. After five seconds of valid epoch-matched
+reports, IDs no longer retained by the classifier are removed from the active
+cohort (explicit unknown/missing reports still block escalation). A pause lasting
+30 seconds closes the episode as `auto_recovery_reset`, preserves arming, and
+waits three seconds before considering a new two-second stationary trigger.
+Manual disarm remains respected; no audio is started from stale input.
+
+Automatic bags close on that reset. Screen recording closes after 35 seconds of
+stale/paused state and uses fragmented MP4 with two-second keyframes, so an
+abrupt exit does not invalidate the entire file. The camera/behavior/scenario/
+recording nodes respawn after process exits. `geniac-watchdog.service` monitors
+six k5 data streams independently: after 30 seconds without a heartbeat it
+restarts the sensor stack, and also HAP if LiDAR is missing. Retry spacing is
+120 seconds. It does not restart an explicitly stopped sensor service.
+Install/enable the watchdog user unit on k5. Mother uses its own persistent user
+unit with restart-on-failure and graceful process-group shutdown. This recovers
+software faults while powered; it cannot repair a disconnected device, loss of
+power, storage exhaustion, or an unavailable external network.

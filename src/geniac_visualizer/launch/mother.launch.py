@@ -9,7 +9,7 @@ def generate_launch_description():
         DeclareLaunchArgument('cloud_topic',default_value='/geniac/visualization/cloud'),
         DeclareLaunchArgument('use_sim_time',default_value='false'),
         DeclareLaunchArgument('screen_record',default_value='true'),
-        Node(package='geniac_visualizer',executable='dashboard',output='screen',parameters=[{
+        Node(respawn=True,respawn_delay=3.,package='geniac_visualizer',executable='dashboard',output='screen',parameters=[{
             'cloud_topic':LaunchConfiguration('cloud_topic'),
             'screen_record':ParameterValue(LaunchConfiguration('screen_record'),value_type=bool),
             'use_sim_time':ParameterValue(LaunchConfiguration('use_sim_time'),value_type=bool)}]),

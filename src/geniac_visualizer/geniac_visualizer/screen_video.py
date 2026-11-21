@@ -46,7 +46,7 @@ class VideoWriter:
                 process=subprocess.Popen(['ffmpeg','-hide_banner','-loglevel','error','-y','-f','rawvideo',
                     '-pixel_format','rgb24','-video_size',f'{self.width}x{self.height}','-framerate',str(self.fps),
                     '-i','pipe:0','-an','-c:v','libx264','-preset','veryfast','-crf','23','-threads','2',
-                    '-pix_fmt','yuv420p','-movflags','+faststart',str(pending)],stdin=subprocess.PIPE,stdout=subprocess.DEVNULL,stderr=log)
+                    '-pix_fmt','yuv420p','-g','20','-movflags','+frag_keyframe+empty_moov+default_base_moof',str(pending)],stdin=subprocess.PIPE,stdout=subprocess.DEVNULL,stderr=log)
                 started=time.monotonic()
                 while True:
                     with self.lock:frame=self.latest
@@ -74,9 +74,14 @@ class VideoWriter:
 
 class ScreenCapture:
     def __init__(self,root,writer=VideoWriter):
-        self.root=root;self.writer=writer;self.active=None;self.finishing=[];self.last_capture=0.;self.error='';self.retry_at=0.
+        self.root=root;self.writer=writer;self.active=None;self.finishing=[];self.last_capture=0.;self.error='';self.retry_at=0.;self.unhealthy_since=None
     def update(self,state,fresh,grab):
         episode=state.get('epoch','').split(':')[0]
+        unhealthy=not fresh or state.get('paused',False)
+        if not unhealthy:self.unhealthy_since=None
+        elif self.unhealthy_since is None:self.unhealthy_since=time.monotonic()
+        if self.active and self.unhealthy_since is not None and time.monotonic()-self.unhealthy_since>=35:
+            self.finish('input_timeout')
         if self.active and self.active.error:
             self.error=self.active.error;self.finish('encoder_error');self.retry_at=time.monotonic()+3
         if self.active and fresh and episode and episode!=self.active.state.get('epoch','').split(':')[0]:
@@ -84,7 +89,7 @@ class ScreenCapture:
         if fresh and state.get('running') and episode and self.active is None and time.monotonic()>=self.retry_at:
             self.error='';self.active=self.writer(self.root,state,grab());self.last_capture=time.monotonic()
         if self.active:
-            ending=fresh and not state.get('running') and not state.get('paused') and (state.get('reason')=='escaped' or state.get('armed') is False)
+            ending=fresh and not state.get('running') and not state.get('paused') and (state.get('reason') in ('escaped','auto_recovery_reset') or state.get('armed') is False)
             if ending or time.monotonic()-self.last_capture>=.1:
                 self.active.offer(grab());self.last_capture=time.monotonic()
             if ending:self.finish(state.get('reason','operator_stop'))

@@ -1,0 +1,9 @@
+[Unit]
+Description=GENIAC independent sensor heartbeat watchdog
+After=geniac-sensor.service
+[Service]
+ExecStart=%h/geniac_ros2_ws/scripts/geniac-watchdog
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=default.target

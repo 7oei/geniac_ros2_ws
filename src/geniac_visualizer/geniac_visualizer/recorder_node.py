@@ -50,7 +50,7 @@ class RecorderNode(Node):
                 self.archive_queue.started(self.recorder.output,data.get('story',{}))
                 self.archive_started_output=self.recorder.output
         if self.auto_owned and data.get('running'):self.auto_seen_running=True
-        if self.auto_owned and self.auto_seen_running and not data.get('running') and not data.get('paused') and (data.get('reason')=='escaped' or data.get('armed') is False):
+        if self.auto_owned and self.auto_seen_running and not data.get('running') and not data.get('paused') and (data.get('reason') in ('escaped','auto_recovery_reset') or data.get('armed') is False):
             self.stop_recording(data.get('reason','operator_stop'));self.auto_owned=False
     def stop_recording(self,reason):
         result=self.recorder.stop()

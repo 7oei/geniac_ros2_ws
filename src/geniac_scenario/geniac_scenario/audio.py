@@ -11,9 +11,9 @@ class Player:
         if self.process is not None:
             if self.process.poll() is None:
                 self.process.terminate()
-                try:self.process.wait(timeout=2)
+                try:self.process.wait(timeout=.1)
                 except subprocess.TimeoutExpired:
-                    self.process.kill();self.process.wait(timeout=2)
+                    self.process.kill();self.process.wait(timeout=.1)
             self.process=None
         if self.error_file is not None:
             self.error_file.close();self.error_file=None

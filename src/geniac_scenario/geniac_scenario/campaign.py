@@ -10,6 +10,7 @@ class Campaign:
         self.waiting='stationary_deer';self.cohort=set()
         self.sink=sink;self.mode=mode;self.volume=volume;self.trial=None;self.last_result=None
         self.paused=False;self.pause_elapsed=0.;self.retry_at=0.
+        self.pause_started=0.;self.fresh_since=None;self.recovery_until=0.
 
     def finish_trial(self,outcome,now):
         if self.trial:
@@ -26,23 +27,38 @@ class Campaign:
     def pause(self,reason,now):
         if not self.armed or self.paused or not self.core.running:return False
         self.pause_elapsed=min(max(0.,now-self.core.entered),self.core.tree['nodes'][self.core.node_id]['duration'])
-        self.paused=True;self.waiting=reason
+        self.paused=True;self.waiting=reason;self.pause_started=now
         self.retry_at=now+1. if reason.startswith('audio_') else now
         self.core.stop(reason)
         return True
 
     def tick(self,now,stamp,report,fresh=True,next_tree=None,input_reason='input_stale'):
         if not self.armed:return False
+        if now<self.recovery_until:return False
+        if self.paused and now-self.pause_started>=30:
+            # Close the interrupted episode, but remain armed for a new one.
+            self.finish_trial('interrupted',now)
+            self.core.stop('auto_recovery_reset');self.core.cohort.clear()
+            self.cohort.clear();self.active=False;self.paused=False
+            self.waiting='input_recovery';self.recovery_until=now+3
+            return True
         if not fresh:
+            self.fresh_since=None
             if self.core.running:return self.pause(input_reason,now)
             return False
+        if self.fresh_since is None:self.fresh_since=now
         targets=report.get('targets',[])
+        # After five seconds of valid, epoch-matched reports, discard IDs that
+        # the classifier no longer retains. Explicit unknown/missing IDs remain.
+        if report.get('epoch')==self.core.epoch and now-self.fresh_since>=5:
+            known={t['id'] for t in targets}
+            self.core.cohort.intersection_update(known);self.cohort.intersection_update(known)
         visible=[t for t in targets if t.get('present') is True and t.get('label') not in ('unknown','escaped')]
         if self.active:self.cohort.update(t['id'] for t in visible)
         if self.paused:
             if report.get('valid') is not True or report.get('epoch')!=self.core.epoch:return False
             self.core.cohort.update(t['id'] for t in visible)
-            response=group_response(targets,self.core.cohort)
+            response='escaped' if not targets and report.get('state')=='escaped' else group_response(targets,self.core.cohort)
             if response=='escaped':
                 self.core._enter(self.core.tree['nodes'][self.core.node_id]['branches']['escaped'],now,stamp,'escaped')
                 self.paused=False;self.active=False;self.waiting='stationary_deer'

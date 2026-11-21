@@ -70,3 +70,11 @@ def test_manual_bag_must_also_be_ready_before_audio():
          recorder=NS(running=lambda:True,wait_ready=lambda:(False,'Not ready')))
     result=RecorderNode.start_auto(n,None,NS())
     assert not result.success and not n.auto_owned
+
+
+def test_recovery_reset_closes_automatic_bag():
+    stopped=[]
+    n=NS(auto_owned=True,auto_seen_running=True,last_scenario=None,pending=False,
+         recorder=NS(),stop_recording=lambda reason:stopped.append(reason))
+    RecorderNode.scenario(n,NS(data=json.dumps(dict(running=False,paused=False,reason='auto_recovery_reset',armed=True))))
+    assert stopped==['auto_recovery_reset'] and not n.auto_owned

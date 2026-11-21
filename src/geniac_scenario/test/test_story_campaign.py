@@ -194,3 +194,21 @@ def test_unknown_at_checkpoint_resumes_with_confirmed_reaction():
     assert c.paused and c.core.node_id=='arrival' and c.core.reason=='input_unknown'
     assert c.tick(9,109,report(c.core))
     assert c.core.node_id=='search' and c.core.running
+
+
+def test_long_pause_closes_episode_but_remains_armed():
+    c=Campaign(story_tree(WEATHER));c.tick(0,100,report(c.core))
+    c.pause('input_stale',1)
+    assert c.tick(31,131,{},fresh=False)
+    assert c.core.reason=='auto_recovery_reset' and c.armed and not c.paused
+    assert not c.tick(32,132,report(c.core))
+    assert c.tick(35,135,report(c.core)) and c.core.running
+
+
+def test_expired_ids_reconciled_only_after_valid_window():
+    c=Campaign(story_tree(WEATHER));c.tick(0,100,report(c.core))
+    c.core.cohort.add('forgotten');c.pause('input_stale',1)
+    c.tick(2,102,report(c.core),fresh=False)
+    assert not c.tick(3,103,report(c.core))
+    assert c.tick(8,108,report(c.core)) and not c.paused
+    assert 'forgotten' not in c.core.cohort

@@ -103,3 +103,18 @@ def test_shared_retention_includes_video(clip,tmp_path):
     row=w.queue.rows()[0];w.limit=1;w.prune()
     assert w.queue.rows()[0]['pruned']==1
     assert not (root/'archives'/row['archive']).exists()
+
+
+def test_stale_screen_capture_finishes_without_operator(tmp_path,monkeypatch):
+    clock=[0.];monkeypatch.setattr('geniac_visualizer.screen_video.time.monotonic',lambda:clock[0])
+    writers=[]
+    class Writer:
+        def __init__(self,root,state,frame):
+            self.state=state;self.error='';self.thread=NS(is_alive=lambda:False);writers.append(self)
+        def offer(self,frame):pass
+        def stop(self,reason):self.reason=reason
+    c=ScreenCapture(tmp_path,Writer)
+    c.update({'epoch':'a:1','running':True},True,lambda:b'frame')
+    clock[0]=1;c.update({},False,lambda:b'frame')
+    clock[0]=37;c.update({},False,lambda:b'frame')
+    assert c.active is None and writers[0].reason=='input_timeout'

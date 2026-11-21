@@ -16,4 +16,4 @@ for attempt in {1..30}; do
   sleep 1
 done
 pactl --server="$PULSE_SERVER" get-default-sink >/dev/null
-exec ros2 launch geniac_scenario sensor.launch.py dry_run:=false auto_record:=true archive_enabled:=true camera_enabled:=true discord_enabled:=true env_file:="$GENIAC_WS/.env" "$@"
+exec ros2 launch geniac_scenario sensor.launch.py dry_run:=false auto_record:=true archive_enabled:=true camera_enabled:=false discord_enabled:=true env_file:="$GENIAC_WS/.env" "$@"

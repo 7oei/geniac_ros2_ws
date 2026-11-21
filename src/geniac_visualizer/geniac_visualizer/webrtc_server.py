@@ -54,15 +54,13 @@ class AutoMedia(Media):
         super().__init__(loop)
         self.selector=CameraSelector(float(os.environ.get('GENIAC_IR_DARK_THRESHOLD','40')),float(os.environ.get('GENIAC_IR_BRIGHT_THRESHOLD','60')))
         self.cache={};self.seen={};self.selected=None;self.sent=None
-    def usb(self,msg):self.cache['usb']=msg;self.seen['usb']=time.monotonic();self.select()
+    def rgb(self,msg):
+        image=cv2.imdecode(np.frombuffer(msg.data,np.uint8),cv2.IMREAD_COLOR)
+        if image is None:return
+        now=time.monotonic()
+        self.selector.update(float(cv2.cvtColor(image,cv2.COLOR_BGR2GRAY).mean()),now)
+        self.cache['rgb']=msg;self.seen['rgb']=now;self.select()
     def ir(self,msg):self.cache['ir']=msg;self.seen['ir']=time.monotonic();self.select()
-    def brightness(self,msg):
-        try:
-            d=json.loads(msg.data)
-            if not 0<=time.time()-float(d['stamp'])<3:return
-            self.selector.update(float(d['raw_luminance']),time.monotonic())
-        except (ValueError,KeyError,TypeError):return
-        self.select()
     def select(self):
         selected=self.selector.choose(time.monotonic(),self.seen)
         self.selected=selected
@@ -70,7 +68,7 @@ class AutoMedia(Media):
         key=(selected,self.seen[selected])
         if self.sent==key:return
         self.sent=key
-        if selected=='usb':super().video(self.cache[selected])
+        if selected=='rgb':super().video(self.cache[selected])
         else:super().raw_video(self.cache[selected])
     def status(self):
         return {'source':self.selected or 'unavailable','raw_luminance':self.selector.luminance,
@@ -121,16 +119,15 @@ async def run():
     from std_msgs.msg import String
     configure_local();rclpy.init();node=Node('geniac_webrtc_media')
     loop=asyncio.get_running_loop()
-    video_topic=os.environ.get('GENIAC_WEBRTC_VIDEO_TOPIC','/camera/image_raw/compressed')
+    video_topic=os.environ.get('GENIAC_WEBRTC_VIDEO_TOPIC','auto')
     media=AutoMedia(loop) if video_topic=='auto' else Media(loop)
     peers=set();relay=MediaRelay();video=Video(media);audio=Audio(media)
     compressed=video_topic.endswith('/compressed')
     callback=media.video if compressed else media.raw_video
     subs=[node.create_subscription(String,'/camera/audio/pcm',lambda m:loop.call_soon_threadsafe(media.sound,m),qos_profile_sensor_data)]
     if video_topic=='auto':
-        for typ,topic,cb in [(CompressedImage,'/camera/image_raw/compressed',media.usb),
-                             (Image,'/d435/camera/infra1/image_rect_raw',media.ir),
-                             (String,'/camera/exposure/status',media.brightness)]:
+        for typ,topic,cb in [(CompressedImage,'/d435/camera/color/image_raw/compressed',media.rgb),
+                             (Image,'/d435/camera/infra1/image_rect_raw',media.ir)]:
             subs.append(node.create_subscription(typ,topic,lambda m,f=cb:loop.call_soon_threadsafe(f,m),qos_profile_sensor_data))
     else:
         subs.append(node.create_subscription(CompressedImage if compressed else Image,video_topic,lambda m:loop.call_soon_threadsafe(callback,m),qos_profile_sensor_data))

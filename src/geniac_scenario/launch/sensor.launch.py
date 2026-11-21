@@ -26,7 +26,7 @@ def generate_launch_description():
         DeclareLaunchArgument('auto_record',default_value='true'),
         DeclareLaunchArgument('archive_enabled',default_value='false'),
         DeclareLaunchArgument('capture_audio',default_value='true'),
-        DeclareLaunchArgument('camera_enabled',default_value='true'),
+        DeclareLaunchArgument('camera_enabled',default_value='false'),
         DeclareLaunchArgument('camera_device',default_value='/dev/video0'),
         DeclareLaunchArgument('recording_service',default_value='true'),
         DeclareLaunchArgument('record_dir',default_value='~/geniac_bags'),

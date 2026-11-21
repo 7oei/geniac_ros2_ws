@@ -37,7 +37,7 @@ class WebRTCClient:
                 if ch.label!='camera_status':return
                 @ch.on('message')
                 def message(text):
-                    try:self.source_label={'usb':'USBカメラ','ir':'D435 左IR','unavailable':'映像待機'}.get(json.loads(text).get('source'),'')
+                    try:self.source_label={'rgb':'D435 RGB','ir':'D435 左IR','unavailable':'映像待機'}.get(json.loads(text).get('source'),'')
                     except (ValueError,TypeError):pass
             channel(pc.createDataChannel('camera_status'))
             @pc.on('track')

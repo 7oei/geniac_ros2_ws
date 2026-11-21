@@ -34,22 +34,22 @@ def test_raw_ir_handles_row_padding():
 
 def test_auto_media_outputs_only_selected_source(monkeypatch):
     from types import SimpleNamespace as NS
-    import json,numpy as np
+    import cv2,numpy as np
     from geniac_visualizer.webrtc_server import AutoMedia
     clock=[0.]
     monkeypatch.setattr('geniac_visualizer.webrtc_server.time.monotonic',lambda:clock[0])
-    monkeypatch.setattr('geniac_visualizer.webrtc_server.time.time',lambda:clock[0])
+    def rgb(level):return NS(data=cv2.imencode('.jpg',np.full((4,4,3),level,np.uint8))[1].tobytes())
     async def check():
-        m=AutoMedia(asyncio.get_running_loop());usb=NS(data=b'jpeg')
+        m=AutoMedia(asyncio.get_running_loop())
         ir=NS(encoding='mono8',width=2,height=2,step=2,data=bytes([80]*4))
         for t in range(4):
-            clock[0]=t;m.usb(usb);m.ir(ir)
-            m.brightness(NS(data=json.dumps(dict(stamp=t,raw_luminance=10))))
+            clock[0]=t;m.rgb(rgb(10));m.ir(ir)
         assert m.selected=='ir' and isinstance(m.image,np.ndarray)
-        m.usb(NS(data=b'another JPEG'))
+        m.rgb(rgb(10))
         assert isinstance(m.image,np.ndarray)
         for t in range(4,10):
-            clock[0]=t;m.usb(usb);m.ir(ir)
-            m.brightness(NS(data=json.dumps(dict(stamp=t,raw_luminance=75))))
-        assert m.selected=='usb' and m.image==b'jpeg'
+            clock[0]=t;m.rgb(rgb(75));m.ir(ir)
+        assert m.selected=='rgb' and m.image==rgb(75).data
+        previous=m.image;m.rgb(NS(data=b'invalid'))
+        assert m.image==previous
     asyncio.run(check())

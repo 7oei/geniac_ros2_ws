@@ -502,8 +502,7 @@ allow capture through V4L2; no root/udev changes were made.
 domain 106. Topics: `/d435/camera/color/image_raw`,
 `/d435/camera/depth/image_rect_raw`, and the corresponding `camera_info` topics.
 Point-cloud generation and depth-to-color alignment are disabled initially.
-This is standalone: the existing USB camera, WebRTC source, and episode bag topic
-list are not switched to D435. The LAN bridge does not export D435 images.
+The USB video node is disabled by default. D435 supplies RGB and left IR. The LAN bridge does not export D435 images.
 
 Read-only verification on k5:
 ```
@@ -520,15 +519,15 @@ monochrome IR stream in the existing WebRTC camera panel. Restart D435 and WebRT
 after switching. The camera microphone remains the existing USB microphone.
 The video topic can also select raw RGB/BGR images or a JPEG `/compressed` topic;
 all source topics remain loopback-only. Removing the drop-in and restarting
-WebRTC restores the original USB-camera image.
+WebRTC restores automatic D435 selection.
 
-### Automatic USB / left-IR selection
+### Automatic D435 RGB / left-IR selection
 
 Install `scripts/deploy/geniac-webrtc-auto.conf` as the WebRTC unit's
-`video.conf` drop-in for automatic selection. USB camera publishes its original
-single-frame luminance (before frame summation) locally on
-`/camera/exposure/status`. Below 40/255 continuously for 3 seconds selects D435
-left IR; above 60/255 for 5 seconds returns to USB. A gap in brightness reports
+`video.conf` drop-in for automatic selection. The gateway measures mean grayscale
+luminance from D435 RGB JPEG frames locally, including while IR is selected.
+Below 40/255 continuously for 3 seconds selects D435 left IR; above 60/255
+for 5 seconds returns to D435 RGB. A gap in brightness reports
 resets the stability timer. Thresholds are configurable via
 `GENIAC_IR_DARK_THRESHOLD` / `GENIAC_IR_BRIGHT_THRESHOLD`. If the selected source
 has no recent frames, the other available source is used. Both images may exist
@@ -536,5 +535,4 @@ locally for capture/decision, but exactly one video track is encoded/sent per
 WebRTC viewer. The existing USB microphone remains the single audio source:
 D435 provides RGB/depth/IR here, not a microphone. Selection is reported in the
 dashboard's WebRTC status and authenticated `/health`. The dashboard recording
-captures whichever image is displayed; the existing bag topic list still records
-the original USB camera and microphone, not D435 IR.
+captures whichever image is displayed; bags record D435 RGB JPEG, left IR, camera calibration and the USB microphone.

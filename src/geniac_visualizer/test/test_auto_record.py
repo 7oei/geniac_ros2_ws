@@ -39,7 +39,7 @@ def test_automatic_bag_survives_pause_and_stops_after_escape():
 
 
 def test_ready_requires_rosbag_ack_and_records_camera(tmp_path):
-    assert '/camera/image_raw/compressed' in TOPICS
+    assert '/d435/camera/color/image_raw/compressed' in TOPICS
     class Process:
         pid=123
         code=None

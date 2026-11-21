@@ -88,13 +88,19 @@ def main(args=None):
         while not closed.is_set():
             p=None
             try:
-                p=subprocess.Popen(['ffmpeg','-v','error','-nostdin','-f','pulse','-sample_rate','48000','-channels','2',
+                p=subprocess.Popen(['ffmpeg','-v','error','-nostdin','-f','pulse','-fragment_size','7680','-sample_rate','48000','-channels','2',
                     '-analyzeduration','0','-probesize','32','-i',source,'-ac','1','-ar',str(RATE),'-f','s16le','-flush_packets','1','pipe:1'],
                     stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
                 holder[:]=[p]
+                deadline=time.monotonic()
                 while not closed.is_set():
                     pcm=p.stdout.read(CHUNK)
                     if len(pcm)!=CHUNK:raise RuntimeError('Microphone input ended')
+                    # Pulse/FFmpeg may deliver several chunks in one read burst.
+                    # Pace ROS publication so small DDS queues do not drop them.
+                    deadline=max(deadline,time.monotonic())
+                    if closed.wait(max(0,deadline-time.monotonic())):break
+                    deadline+=CHUNK/(RATE*2)
                     pub.publish(String(data=json.dumps({'stamp':node.get_clock().now().nanoseconds/1e9,
                         'rate':RATE,'channels':1,'format':'s16le','pcm':base64.b64encode(pcm).decode()})))
             except (OSError,RuntimeError) as exc:node.get_logger().warning(str(exc)+'; retrying in 2s')

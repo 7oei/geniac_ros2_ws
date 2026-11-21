@@ -13,6 +13,7 @@ class WebRTCClient:
     def __init__(self,url,token_file,monitor):
         self.url=url.rstrip('/');self.token=Path(token_file).read_text().strip();self.monitor=monitor
         self.closed=threading.Event();self.frame=None;self.status='WebRTC接続待機';self.video_frames=0;self.audio_frames=0
+        self.source_label=''
         self.thread=threading.Thread(target=lambda:asyncio.run(self.run()),daemon=True);self.thread.start()
     async def run(self):
         while not self.closed.is_set():
@@ -31,6 +32,13 @@ class WebRTCClient:
                             pcm=bytes(pending[:1280]);del pending[:1280]
                             self.monitor.receive(json.dumps({'stamp':time.time(),'rate':16000,'channels':1,'format':'s16le','pcm':base64.b64encode(pcm).decode()}),time.time())
                             self.audio_frames+=1
+            @pc.on('datachannel')
+            def channel(ch):
+                if ch.label!='camera_status':return
+                @ch.on('message')
+                def message(text):
+                    try:self.source_label={'usb':'USBカメラ','ir':'D435 左IR','unavailable':'映像待機'}.get(json.loads(text).get('source'),'')
+                    except (ValueError,TypeError):pass
             @pc.on('track')
             def track(t):
                 task=asyncio.create_task(receive(t));tasks.add(task)
@@ -42,7 +50,7 @@ class WebRTCClient:
                         reply.raise_for_status();answer=await reply.json()
                 await pc.setRemoteDescription(RTCSessionDescription(**answer))
                 while not self.closed.is_set():
-                    self.status='WebRTC接続中' if pc.connectionState=='connected' else 'WebRTC接続待機'
+                    self.status=('WebRTC接続中 '+self.source_label) if pc.connectionState=='connected' else 'WebRTC接続待機'
                     if pc.connectionState in ('failed','closed','disconnected') or time.monotonic()-last[0]>15:break
                     if any(t.done() for t in tasks):break
                     await asyncio.sleep(.2)

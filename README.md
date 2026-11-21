@@ -521,3 +521,20 @@ after switching. The camera microphone remains the existing USB microphone.
 The video topic can also select raw RGB/BGR images or a JPEG `/compressed` topic;
 all source topics remain loopback-only. Removing the drop-in and restarting
 WebRTC restores the original USB-camera image.
+
+### Automatic USB / left-IR selection
+
+Install `scripts/deploy/geniac-webrtc-auto.conf` as the WebRTC unit's
+`video.conf` drop-in for automatic selection. USB camera publishes its original
+single-frame luminance (before frame summation) locally on
+`/camera/exposure/status`. Below 40/255 continuously for 3 seconds selects D435
+left IR; above 60/255 for 5 seconds returns to USB. A gap in brightness reports
+resets the stability timer. Thresholds are configurable via
+`GENIAC_IR_DARK_THRESHOLD` / `GENIAC_IR_BRIGHT_THRESHOLD`. If the selected source
+has no recent frames, the other available source is used. Both images may exist
+locally for capture/decision, but exactly one video track is encoded/sent per
+WebRTC viewer. The existing USB microphone remains the single audio source:
+D435 provides RGB/depth/IR here, not a microphone. Selection is reported in the
+dashboard's WebRTC status and authenticated `/health`. The dashboard recording
+captures whichever image is displayed; the existing bag topic list still records
+the original USB camera and microphone, not D435 IR.

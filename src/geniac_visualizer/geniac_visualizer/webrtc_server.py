@@ -16,6 +16,7 @@ from aiohttp import web
 from aiortc import RTCPeerConnection,RTCSessionDescription,RTCConfiguration,MediaStreamTrack,RTCRtpSender
 from aiortc.contrib.media import MediaRelay
 from .local_network import configure_local
+from .camera_selector import CameraSelector
 
 
 def notify(message):
@@ -47,6 +48,33 @@ class Media:
         except (ValueError,KeyError,TypeError):return
         if self.audio.full():self.audio.get_nowait()
         self.audio.put_nowait(pcm);self.audio_received=time.monotonic()
+
+class AutoMedia(Media):
+    def __init__(self,loop):
+        super().__init__(loop)
+        self.selector=CameraSelector(float(os.environ.get('GENIAC_IR_DARK_THRESHOLD','40')),float(os.environ.get('GENIAC_IR_BRIGHT_THRESHOLD','60')))
+        self.cache={};self.seen={};self.selected=None;self.sent=None
+    def usb(self,msg):self.cache['usb']=msg;self.seen['usb']=time.monotonic();self.select()
+    def ir(self,msg):self.cache['ir']=msg;self.seen['ir']=time.monotonic();self.select()
+    def brightness(self,msg):
+        try:
+            d=json.loads(msg.data)
+            if not 0<=time.time()-float(d['stamp'])<3:return
+            self.selector.update(float(d['raw_luminance']),time.monotonic())
+        except (ValueError,KeyError,TypeError):return
+        self.select()
+    def select(self):
+        selected=self.selector.choose(time.monotonic(),self.seen)
+        self.selected=selected
+        if selected is None:return
+        key=(selected,self.seen[selected])
+        if self.sent==key:return
+        self.sent=key
+        if selected=='usb':super().video(self.cache[selected])
+        else:super().raw_video(self.cache[selected])
+    def status(self):
+        return {'source':self.selected or 'unavailable','raw_luminance':self.selector.luminance,
+                'dark_threshold':self.selector.dark,'bright_threshold':self.selector.bright}
 
 class Video(MediaStreamTrack):
     kind='video'
@@ -92,12 +120,20 @@ async def run():
     from sensor_msgs.msg import CompressedImage,Image
     from std_msgs.msg import String
     configure_local();rclpy.init();node=Node('geniac_webrtc_media')
-    loop=asyncio.get_running_loop();media=Media(loop);peers=set();relay=MediaRelay();video=Video(media);audio=Audio(media)
+    loop=asyncio.get_running_loop()
     video_topic=os.environ.get('GENIAC_WEBRTC_VIDEO_TOPIC','/camera/image_raw/compressed')
+    media=AutoMedia(loop) if video_topic=='auto' else Media(loop)
+    peers=set();relay=MediaRelay();video=Video(media);audio=Audio(media)
     compressed=video_topic.endswith('/compressed')
     callback=media.video if compressed else media.raw_video
-    subs=[node.create_subscription(CompressedImage if compressed else Image,video_topic,lambda m:loop.call_soon_threadsafe(callback,m),qos_profile_sensor_data),
-          node.create_subscription(String,'/camera/audio/pcm',lambda m:loop.call_soon_threadsafe(media.sound,m),qos_profile_sensor_data)]
+    subs=[node.create_subscription(String,'/camera/audio/pcm',lambda m:loop.call_soon_threadsafe(media.sound,m),qos_profile_sensor_data)]
+    if video_topic=='auto':
+        for typ,topic,cb in [(CompressedImage,'/camera/image_raw/compressed',media.usb),
+                             (Image,'/d435/camera/infra1/image_rect_raw',media.ir),
+                             (String,'/camera/exposure/status',media.brightness)]:
+            subs.append(node.create_subscription(typ,topic,lambda m,f=cb:loop.call_soon_threadsafe(f,m),qos_profile_sensor_data))
+    else:
+        subs.append(node.create_subscription(CompressedImage if compressed else Image,video_topic,lambda m:loop.call_soon_threadsafe(callback,m),qos_profile_sensor_data))
     thread=threading.Thread(target=lambda:rclpy.spin(node),daemon=True);thread.start()
     token=Path(os.environ.get('GENIAC_MEDIA_TOKEN_FILE',str(Path.home()/'geniac_ros2_ws/.media-token'))).read_text().strip()
     if len(token)<32:raise ValueError('Missing media authentication token')
@@ -109,6 +145,7 @@ async def run():
         if len(peers)>=3:raise web.HTTPServiceUnavailable(text='Too many viewers')
         data=await request.json()
         pc=RTCPeerConnection(RTCConfiguration(iceServers=[]));peers.add(pc);pc._geniac_started=time.monotonic()
+        pc._camera_status=pc.createDataChannel('camera_status')
         @pc.on('connectionstatechange')
         async def state():
             if pc.connectionState in ('failed','closed'):
@@ -126,7 +163,7 @@ async def run():
             await pc.close();peers.discard(pc);raise
     async def health(request):
         now=time.monotonic()
-        return web.json_response({'video_topic':video_topic,'viewers':len(peers),'video_age':now-media.video_received,'audio_age':now-media.audio_received})
+        return web.json_response({**(media.status() if isinstance(media,AutoMedia) else {}),'video_topic':video_topic,'viewers':len(peers),'video_age':now-media.video_received,'audio_age':now-media.audio_received})
     app=web.Application(middlewares=[auth],client_max_size=65536);app.router.add_post('/offer',offer);app.router.add_get('/health',health)
     runner=web.AppRunner(app);await runner.setup()
     await web.TCPSite(runner,os.environ.get('GENIAC_MEDIA_BIND','192.168.1.64'),8766).start();notify('READY=1')
@@ -134,6 +171,7 @@ async def run():
         while True:
             notify('WATCHDOG=1')
             for pc in tuple(peers):
+                if isinstance(media,AutoMedia) and pc._camera_status.readyState=='open':pc._camera_status.send(json.dumps(media.status()))
                 if pc.connectionState in ('failed','closed','disconnected') or (pc.connectionState!='connected' and time.monotonic()-pc._geniac_started>20):
                     await pc.close();peers.discard(pc)
             await asyncio.sleep(5)

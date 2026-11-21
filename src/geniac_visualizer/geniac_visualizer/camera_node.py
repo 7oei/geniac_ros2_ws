@@ -1,13 +1,15 @@
 """USB camera publisher: JPEG for transport/bag, optional raw image for consumers."""
+import json
 import signal
 import time
 import cv2
 from .exposure import AutoExposure
-from .frame_sum import FrameSum
+from .frame_sum import FrameSum,luminance
 import rclpy
 from rclpy.node import Node
 from rclpy.executors import ExternalShutdownException
 from sensor_msgs.msg import CompressedImage,Image
+from std_msgs.msg import String
 
 class CameraNode(Node):
     def __init__(self,**kwargs):
@@ -30,6 +32,7 @@ class CameraNode(Node):
         self.stack_log=0.
         self.exposure=AutoExposure(self.device,maximum*10,self.get_logger().info) if adaptive else None
         if not 0<fps<=60 or not 1<=self.quality<=100 or min(self.width,self.height)<1:raise ValueError('Invalid camera parameters')
+        self.exposure_pub=self.create_publisher(String,'/camera/exposure/status',3)
         self.pub=self.create_publisher(CompressedImage,'/camera/image_raw/compressed',3)
         self.raw_pub=self.create_publisher(Image,'/camera/image_raw',3) if self.raw else None
         self.capture=None;self.retry=0.;self.create_timer(1/fps,self.tick)
@@ -51,6 +54,7 @@ class CameraNode(Node):
         # Exposure feedback always uses the original frame, never the brightened sum.
         at_limit=bool(self.exposure and self.exposure.active and self.exposure.current>=self.exposure.maximum)
         if self.exposure:self.exposure.update(image)
+        self.exposure_pub.publish(String(data=json.dumps({'stamp':self.get_clock().now().nanoseconds/1e9,'raw_luminance':luminance(image)})))
         image=self.stack.apply(image,self.stack_enabled and at_limit)
         if self.stack.frames and time.monotonic()>=self.stack_log:
             self.get_logger().info(f'Frame sum: {len(self.stack.frames)} frames, mean={self.stack.level:.1f}/255, target={self.stack.target:g}')

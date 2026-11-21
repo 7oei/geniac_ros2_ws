@@ -30,3 +30,26 @@ def test_raw_ir_handles_row_padding():
         assert m.image[:,:,0].tolist()==[[10,20],[30,40]]
         assert m.image_event.is_set()
     asyncio.run(check())
+
+
+def test_auto_media_outputs_only_selected_source(monkeypatch):
+    from types import SimpleNamespace as NS
+    import json,numpy as np
+    from geniac_visualizer.webrtc_server import AutoMedia
+    clock=[0.]
+    monkeypatch.setattr('geniac_visualizer.webrtc_server.time.monotonic',lambda:clock[0])
+    monkeypatch.setattr('geniac_visualizer.webrtc_server.time.time',lambda:clock[0])
+    async def check():
+        m=AutoMedia(asyncio.get_running_loop());usb=NS(data=b'jpeg')
+        ir=NS(encoding='mono8',width=2,height=2,step=2,data=bytes([80]*4))
+        for t in range(4):
+            clock[0]=t;m.usb(usb);m.ir(ir)
+            m.brightness(NS(data=json.dumps(dict(stamp=t,raw_luminance=10))))
+        assert m.selected=='ir' and isinstance(m.image,np.ndarray)
+        m.usb(NS(data=b'another JPEG'))
+        assert isinstance(m.image,np.ndarray)
+        for t in range(4,10):
+            clock[0]=t;m.usb(usb);m.ir(ir)
+            m.brightness(NS(data=json.dumps(dict(stamp=t,raw_luminance=75))))
+        assert m.selected=='usb' and m.image==b'jpeg'
+    asyncio.run(check())

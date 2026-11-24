@@ -485,3 +485,18 @@ def test_no_scores_keeps_baseline_after_exploration():
     base={'id':'baseline','strategy':'seed'}
     context={'baseline_concept':base,'recent_concepts':[{'id':'new','strategy':'explore'}]}
     assert strategy_for(4,context)[1]['story_id']=='baseline'
+
+
+def test_used_story_cross_day_requires_matching_current_surface(tmp_path):
+    h,sid,path=ready_fixture(tmp_path)
+    h.claim(sid);h.record(result(sid))
+    tomorrow='2099-01-01'
+    stock=Stock(tmp_path)
+    assert stock.ready(tomorrow,status='used')==[]
+    (tmp_path/'weather.json').write_text(json.dumps({'date':tomorrow,'surface':'grass'}))
+    assert stock.ready(tomorrow,status='used')==[path]
+    assert stock.ready(tomorrow)==[]
+    (tmp_path/'weather.json').write_text(json.dumps({'date':tomorrow,'surface':'rain'}))
+    assert stock.ready(tomorrow,status='used')==[]
+    (tmp_path/'weather.json').write_text(json.dumps({'date':'2000-01-01','surface':'grass'}))
+    assert stock.ready(tomorrow,status='used')==[]

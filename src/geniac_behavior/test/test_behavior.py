@@ -191,3 +191,21 @@ def test_outage_does_not_carry_stationary_evidence_into_next_scene():
     c.update(packet(3.2,10));c.begin('after-outage',3.25);c.update(packet(3.3,10))
     assert c.report(3.3)['targets'][0]['stationary_seconds']==0
     assert c.report(3.3)['targets'][0]['label']=='observing'
+
+
+def test_inflight_pre_scene_frame_does_not_invalidate_input():
+    c=Classifier()
+    c.update(packet(100.,10))
+    c.begin('new-scene',100.15)
+    c.update(packet(100.1,10))
+    assert c.report(100.2)['valid'] is True
+    assert c.last_stamp==100.  # Never restamp old data as new.
+    assert c.report(101.2)['valid'] is False
+    c.update(packet(100.3,10))
+    assert c.report(100.4)['valid'] is True
+
+
+def test_invalid_inflight_frame_is_not_ignored():
+    c=Classifier();c.update(packet(100.,10));c.begin('new-scene',100.15)
+    p=packet(100.1,10);p['valid']=False;c.update(p)
+    assert c.report(100.2)['valid'] is False

@@ -54,7 +54,7 @@ class Stock:
         date=date or datetime.now(JST).date().isoformat()
         try:
             if (self.root/'history.sqlite3').exists():
-                entries=[r['path'] for r in History(self.root).rows(status,date)]
+                entries=[r['path'] for r in History(self.root).rows(status,None if status=='used' else date)]
             else:
                 data=json.loads((self.root/'ready.json').read_text())
                 if data['date']!=date or status!='ready':return []
@@ -77,8 +77,14 @@ class Stock:
                     from .core_cast import validate as validate_core_cast
                     validate_core_cast(tree,manifest)
                 weather=tree.get('story',{}).get('weather',{})
-                if weather.get('date')!=date:continue
+                if status!='used' and weather.get('date')!=date:continue
                 current=self.root/'weather.json'
+                if status=='used' and weather.get('date')!=date:
+                    # Cross-day reuse requires current weather evidence.
+                    if not current.exists():continue
+                    observed=json.loads(current.read_text())
+                    if observed.get('date')!=date or observed.get('surface') not in ('grass','rain','snow'):continue
+                    if observed['surface']!=weather.get('surface'):continue
                 if current.exists():
                     observed=json.loads(current.read_text())
                     if observed.get('date')==date and observed.get('surface')!=weather.get('surface'):continue

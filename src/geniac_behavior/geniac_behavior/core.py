@@ -77,6 +77,14 @@ class Classifier:
             if p.shape != (3,) or not np.isfinite(p).all():raise ValueError('Invalid track coordinates')
             rows.append((str(stream) + ':' + str(t['track_id']), p))
         if len({k for k,p in rows}) != len(rows):raise ValueError('Duplicate track ID')
+        # A frame captured just before a scene change may arrive after begin().
+        # Ignore that in-flight frame; retain the last valid observation and its
+        # original timestamp so the normal stale-data guard still applies.
+        if (packet.get('valid', True) is True and self.valid
+                and self.last_stamp is not None and stamp >= self.last_stamp
+                and frame == self.frame and stream == self.stream
+                and 0 < self.epoch_stamp-stamp <= self.settings.stale_seconds):
+            return
         reset = self.last_stamp is not None and (stamp <= self.last_stamp or frame != self.frame or stream != self.stream)
         if reset:
             self.histories.clear();self.baselines.clear();self.moved.clear();self.departed.clear();self.pending.clear()

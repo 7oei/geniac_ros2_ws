@@ -82,6 +82,10 @@ class CloudView(QtWidgets.QWidget):
 class CameraView(QtWidgets.QWidget):
     def __init__(self):
         super().__init__();self.image=None;self.received=0.;self.setMinimumSize(320,150)
+    def resizeEvent(self,event):
+        super().resizeEvent(event)
+        if hasattr(self,'width_aspect'):
+            self.setMinimumHeight(math.ceil(self.width()/self.width_aspect))
     def receive(self,msg):
         formats={'rgb8':(3,QtGui.QImage.Format_RGB888),'bgr8':(3,QtGui.QImage.Format_RGB888),'mono8':(1,QtGui.QImage.Format_Grayscale8)}
         if msg.encoding not in formats:return
@@ -139,7 +143,7 @@ class Dashboard(QtWidgets.QMainWindow):
         left=QtWidgets.QSplitter(QtCore.Qt.Vertical);layout.addWidget(left,1)
         self.media=QtWidgets.QGroupBox('カメラ');media_layout=QtWidgets.QVBoxLayout(self.media)
         self.camera=CameraView();self.cloud=CameraView() if self.use_webrtc else CloudView(self.model);self.cloud.setMinimumSize(320,150)
-        if self.use_webrtc:self.cloud.waiting_text='点群映像未接続'
+        if self.use_webrtc:self.cloud.waiting_text='点群映像未接続';self.cloud.width_aspect=3.
         media_layout.addWidget(self.camera)
         right=QtWidgets.QSplitter(QtCore.Qt.Vertical);columns.addWidget(right)
         cloud_panel=QtWidgets.QGroupBox('LiDAR点群');cloud_layout=QtWidgets.QVBoxLayout(cloud_panel)
@@ -155,7 +159,7 @@ class Dashboard(QtWidgets.QMainWindow):
         story_layout.addWidget(text_panel,1)
         self.details=QtWidgets.QPlainTextEdit();self.details.setReadOnly(True);tl.addWidget(self.details);left.addWidget(story_area)
         columns.setSizes([480,980]);left.setSizes([320,280,200])
-        right.setSizes([250,630]);right.setStretchFactor(0,1);right.setStretchFactor(1,3)
+        right.setSizes([350,530]);right.setStretchFactor(0,0);right.setStretchFactor(1,1)
         columns.setStretchFactor(0,1);columns.setStretchFactor(1,2)
         left.setStretchFactor(0,3);left.setStretchFactor(1,3);left.setStretchFactor(2,2)
         self.clients={s:node.create_client(Trigger,s) for s in ['/geniac/scenario/start','/geniac/scenario/stop','/geniac/recording/start','/geniac/recording/stop']}
